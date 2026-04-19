@@ -49,4 +49,7 @@ router.post('/:id/availability/bulk', auth, doctorController.addAvailabilityBulk
 router.put('/:id/availability/:slotId', auth, doctorController.updateAvailability);
 router.delete('/:id/availability/:slotId', auth, doctorController.deleteAvailability);
 
+// Admin: suspend or reactivate a doctor
+router.patch('/:id/status', auth, doctorController.suspendDoctor);
+
 module.exports = router;

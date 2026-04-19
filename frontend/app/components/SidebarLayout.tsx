@@ -21,6 +21,7 @@ const getNavItems = (role?: string) => {
       { href: '/admin/appointments', label: 'All Appointments', icon: <Calendar size={20} /> },
       { href: '/admin/payments', label: 'System Payments', icon: <CreditCard size={20} /> },
       { href: '/admin/oversight', label: 'Platform Oversight', icon: <LineChart size={20} /> },
+      { href: '/admin/health', label: 'Service Health', icon: <HeartPulse size={20} /> },
       { href: '/admin/ai-insights', label: 'AI Triage Insights', icon: <Brain size={20} /> },
     ];
   }

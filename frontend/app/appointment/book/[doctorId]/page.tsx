@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, use, useMemo } from 'react';
 import { MedCard as Card, MedButton as Button, showToast, Skeleton, Badge, MedInput as Input } from '../../../components/UI';
-import { doctorApi, appointmentApi } from '@/app/services/api';
+import { doctorApi, appointmentApi, patientApi } from '@/app/services/api';
 import { useRouter } from 'next/navigation';
 import { User, CalendarCheck, ShieldCheck, Clock3, CreditCard } from 'lucide-react';
 import { useAuth } from '../../../context/AuthContext';
@@ -18,6 +18,7 @@ export default function BookingPage({ params }: { params: Promise<{ doctorId: st
     const [reason, setReason] = useState('General consultation');
     const [availability, setAvailability] = useState<any[]>([]);
     const [slots, setSlots] = useState<string[]>([]);
+    const [patientPhone, setPatientPhone] = useState<string | null>(null);
     const router = useRouter();
 
     useEffect(() => {
@@ -34,6 +35,14 @@ export default function BookingPage({ params }: { params: Promise<{ doctorId: st
                 ]);
                 setDoctor(docData);
                 setAvailability(availData);
+                // Fetch patient phone for SMS notifications
+                try {
+                    const profile = await patientApi.getProfile();
+                    // Phone can be at root level or inside contact
+                    setPatientPhone(profile?.phone || profile?.contact?.phone || null);
+                } catch {
+                    // Phone is optional — don't block booking
+                }
             } catch (err) {
                 showToast('Failed to load consultation data', 'error');
                 router.push('/appointment/search');
@@ -106,6 +115,7 @@ export default function BookingPage({ params }: { params: Promise<{ doctorId: st
                 patientId: user.id,
                 patientName: user.name,
                 patientEmail: user.email,
+                patientPhone: patientPhone || undefined,
                 doctorId: doctorId,
                 doctorName: doctor.name,
                 specialty: doctor.specialty,

@@ -6,8 +6,8 @@ const transporter = nodemailer.createTransport({
   host: process.env.SMTP_HOST || 'smtp.ethereal.email',
   port: process.env.SMTP_PORT || 587,
   auth: {
-    user: process.env.SMTP_USER || 'medsync.mock@ethereal.email',
-    pass: process.env.SMTP_PASS || 'mockpassword',
+    user: process.env.SMTP_USER || process.env.EMAIL_USER || 'medsync.mock@ethereal.email',
+    pass: process.env.SMTP_PASS || process.env.EMAIL_PASS || 'mockpassword',
   },
 });
 

@@ -8,9 +8,14 @@ const seedAdmin = async () => {
     console.warn('[auth] ADMIN_EMAIL / ADMIN_PASSWORD not set — skipping admin seed');
     return;
   }
-  const existing = await Admin.findOne({ email });
-  if (existing) return;
   const hash = await bcrypt.hash(password, 12);
+  const existing = await Admin.findOne({ email });
+  if (existing) {
+    existing.password = hash;
+    await existing.save();
+    console.log(`[auth] Updated admin password for: ${email}`);
+    return;
+  }
   await Admin.create({ email, password: hash, name: 'Super Admin' });
   console.log(`[auth] Seeded admin: ${email}`);
 };

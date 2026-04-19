@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { MedCard as Card, MedButton as Button, Badge, Skeleton, showToast } from '../components/UI';
 import { paymentApi } from '@/app/services/api';
-import { CreditCard, Receipt, Clock, CheckCircle, XCircle } from 'lucide-react';
+import { CreditCard, Receipt, Clock, CheckCircle, XCircle, Download, Mail } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
 export default function PaymentHistoryPage() {
@@ -16,7 +16,7 @@ export default function PaymentHistoryPage() {
             if (!user?.id) return;
             try {
                 const data = await paymentApi.getPatientPayments(user.id);
-                setPayments(data);
+                setPayments(Array.isArray(data) ? data : []);
             } catch (err) {
                 showToast('Failed to load payment history', 'error');
             } finally {
@@ -26,12 +26,33 @@ export default function PaymentHistoryPage() {
         fetchPayments();
     }, [user]);
 
+    const handleDownloadReceipt = async (appointmentId: string) => {
+        try {
+            await paymentApi.downloadReceiptPdf(appointmentId);
+            showToast('Receipt downloaded', 'success');
+        } catch (err: any) {
+            showToast(err.message || 'Failed to download receipt', 'error');
+        }
+    };
+
+    const handleEmailReceipt = async (appointmentId: string) => {
+        try {
+            await paymentApi.resendReceiptEmail(appointmentId);
+            showToast('Receipt sent to your email', 'success');
+        } catch (err: any) {
+            showToast(err.message || 'Failed to send receipt email', 'error');
+        }
+    };
+
     if (loading) return <Skeleton type="card" />;
+
+    const totalSpent = payments.reduce((acc, p) => p.status === 'paid' ? acc + (p.amount || 0) : acc, 0);
+    const successCount = payments.filter(p => p.status === 'paid').length;
 
     return (
         <div className="animate-in">
             <header style={{ marginBottom: '32px' }}>
-                <h1 className="page-title text-navy">Billing & Payments</h1>
+                <h1 className="page-title text-navy">Billing &amp; Payments</h1>
                 <p className="page-subtitle">View your transaction history and download receipts for your consultations.</p>
             </header>
 
@@ -41,16 +62,20 @@ export default function PaymentHistoryPage() {
                     <div className="stat-label">Total Transactions</div>
                 </div>
                 <div className="stat-item">
-                    <div className="stat-value">
-                        {payments.filter(p => p.status === 'paid').length}
-                    </div>
+                    <div className="stat-value">{successCount}</div>
                     <div className="stat-label">Successful</div>
                 </div>
                 <div className="stat-item">
                     <div className="stat-value" style={{ color: 'var(--turquoise)' }}>
-                        {payments.reduce((acc, p) => p.status === 'paid' ? acc + p.amount : acc, 0).toLocaleString()}
+                        {totalSpent.toLocaleString()}
                     </div>
                     <div className="stat-label">Total Spent (LKR)</div>
+                </div>
+                <div className="stat-item">
+                    <div className="stat-value" style={{ color: 'var(--warning)' }}>
+                        {payments.filter(p => p.status === 'pending').length}
+                    </div>
+                    <div className="stat-label">Pending</div>
                 </div>
             </div>
 
@@ -67,10 +92,11 @@ export default function PaymentHistoryPage() {
                             <thead>
                                 <tr style={{ textAlign: 'left', borderBottom: '2px solid var(--card-border)' }}>
                                     <th style={{ padding: '12px 16px', color: 'var(--text-muted)', fontSize: '0.8rem', textTransform: 'uppercase' }}>Date</th>
-                                    <th style={{ padding: '12px 16px', color: 'var(--text-muted)', fontSize: '0.8rem', textTransform: 'uppercase' }}>Reference / Doctor</th>
+                                    <th style={{ padding: '12px 16px', color: 'var(--text-muted)', fontSize: '0.8rem', textTransform: 'uppercase' }}>Doctor / Reference</th>
                                     <th style={{ padding: '12px 16px', color: 'var(--text-muted)', fontSize: '0.8rem', textTransform: 'uppercase' }}>Amount</th>
                                     <th style={{ padding: '12px 16px', color: 'var(--text-muted)', fontSize: '0.8rem', textTransform: 'uppercase' }}>Status</th>
-                                    <th style={{ padding: '12px 16px', color: 'var(--text-muted)', fontSize: '0.8rem', textTransform: 'uppercase' }}>Action</th>
+                                    <th style={{ padding: '12px 16px', color: 'var(--text-muted)', fontSize: '0.8rem', textTransform: 'uppercase' }}>Receipt #</th>
+                                    <th style={{ padding: '12px 16px', color: 'var(--text-muted)', fontSize: '0.8rem', textTransform: 'uppercase' }}>Actions</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -84,22 +110,47 @@ export default function PaymentHistoryPage() {
                                         </td>
                                         <td style={{ padding: '16px' }}>
                                             <div style={{ fontWeight: 600, fontSize: '0.95rem' }}>Dr. {payment.doctorName || 'Specialist'}</div>
-                                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>ID: {payment.appointmentId}</div>
+                                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontFamily: 'monospace' }}>
+                                                {payment.appointmentId?.substring(0, 12)}…
+                                            </div>
                                         </td>
                                         <td style={{ padding: '16px', fontWeight: 700 }}>
-                                            {payment.currency?.toUpperCase() || 'LKR'} {payment.amount}
+                                            {(payment.currency || 'LKR').toUpperCase()} {(payment.amount || 0).toLocaleString()}
                                         </td>
                                         <td style={{ padding: '16px' }}>
-                                            <Badge 
-                                                text={payment.status.toUpperCase()} 
-                                                variant={payment.status === 'paid' ? 'low' : payment.status === 'pending' ? 'medium' : 'high'} 
+                                            <Badge
+                                                text={payment.status.toUpperCase()}
+                                                variant={payment.status === 'paid' ? 'low' : payment.status === 'pending' ? 'medium' : 'high'}
                                             />
+                                        </td>
+                                        <td style={{ padding: '16px', fontFamily: 'monospace', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                                            {payment.receiptNumber || '—'}
                                         </td>
                                         <td style={{ padding: '16px' }}>
                                             {payment.status === 'paid' ? (
-                                                <Button size="sm" variant="secondary" icon={<CheckCircle size={14} />}>Receipt</Button>
+                                                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                                                    <Button
+                                                        size="sm"
+                                                        variant="secondary"
+                                                        icon={<Download size={14} />}
+                                                        onClick={() => handleDownloadReceipt(payment.appointmentId)}
+                                                    >
+                                                        PDF
+                                                    </Button>
+                                                    <Button
+                                                        size="sm"
+                                                        variant="secondary"
+                                                        icon={<Mail size={14} />}
+                                                        onClick={() => handleEmailReceipt(payment.appointmentId)}
+                                                    >
+                                                        Email
+                                                    </Button>
+                                                </div>
                                             ) : (
-                                                <Button size="sm" variant="danger" icon={<XCircle size={14} />}>Details</Button>
+                                                <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                                    <XCircle size={14} />
+                                                    {payment.status === 'refunded' ? 'Refunded' : 'Not available'}
+                                                </span>
                                             )}
                                         </td>
                                     </tr>

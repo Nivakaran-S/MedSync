@@ -3,8 +3,8 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const Admin = require('../models/Admin');
 
-const PATIENT_URL = process.env.PATIENT_SERVICE_URL || 'http://patient-management:3001/api/patients';
-const DOCTOR_URL = process.env.DOCTOR_SERVICE_URL || 'http://doctor-management:3002/api/doctors';
+const PATIENT_URL = (process.env.PATIENT_SERVICE_URL || 'http://patient-management:3001') + '/api/patients';
+const DOCTOR_URL = (process.env.DOCTOR_SERVICE_URL || 'http://doctor-management:3002') + '/api/doctors';
 const JWT_EXPIRE = process.env.JWT_EXPIRE || '7d';
 
 const issueToken = (payload) =>
@@ -13,10 +13,11 @@ const issueToken = (payload) =>
 const normalize = (data, role) => {
   const subject = data.patient || data.doctor || data.admin || data.user;
   if (!subject) return null;
+  const email = subject.email || (subject.contact && subject.contact.email) || undefined;
   return {
     id: subject._id || subject.id,
-    email: subject.email,
-    name: subject.name || `${subject.firstName || ''} ${subject.lastName || ''}`.trim() || subject.email,
+    email: email,
+    name: subject.name || `${subject.firstName || ''} ${subject.lastName || ''}`.trim() || email,
     role,
   };
 };
@@ -96,3 +97,53 @@ exports.verify = (req, res) => {
     return res.status(401).json({ valid: false, message: 'Invalid or expired token' });
   }
 };
+
+exports.getPlatformHealth = async (req, res) => {
+  // Verify admin token
+  const header = req.headers.authorization;
+  if (!header || !header.startsWith('Bearer ')) {
+    return res.status(401).json({ message: 'Authorization token required' });
+  }
+  try {
+    const decoded = jwt.verify(header.slice(7), process.env.JWT_SECRET);
+    if (decoded.role !== 'admin') {
+      return res.status(403).json({ message: 'Admin access required.' });
+    }
+  } catch {
+    return res.status(401).json({ message: 'Invalid or expired token' });
+  }
+
+  const services = [
+    { name: 'patient-management', url: `${process.env.PATIENT_SERVICE_URL || 'http://patient-management:3001'}/health` },
+    { name: 'doctor-management', url: `${process.env.DOCTOR_SERVICE_URL || 'http://doctor-management:3002'}/health` },
+    { name: 'appointment',       url: `${process.env.APPOINTMENT_SERVICE_URL || 'http://appointment:3003'}/health` },
+    { name: 'telemedicine',      url: `${process.env.TELEMEDICINE_SERVICE_URL || 'http://telemedicine:3004'}/health` },
+    { name: 'payment',           url: `${process.env.PAYMENT_SERVICE_URL || 'http://payment:3005'}/health` },
+    { name: 'notification',      url: `${process.env.NOTIFICATION_SERVICE_URL || 'http://notification:3006'}/health` },
+    { name: 'ai-symptom-checker',url: `${process.env.AI_SERVICE_URL || 'http://ai-symptom-checker:3007'}/health` },
+  ];
+
+  const results = await Promise.allSettled(
+    services.map(async (svc) => {
+      const start = Date.now();
+      try {
+        await axios.get(svc.url, { timeout: 3000 });
+        return { name: svc.name, status: 'healthy', latencyMs: Date.now() - start };
+      } catch {
+        return { name: svc.name, status: 'unreachable', latencyMs: Date.now() - start };
+      }
+    })
+  );
+
+  const health = results.map(r =>
+    r.status === 'fulfilled' ? r.value : { name: 'unknown', status: 'error', latencyMs: 0 }
+  );
+
+  const allHealthy = health.every(s => s.status === 'healthy');
+  res.json({
+    timestamp: new Date().toISOString(),
+    overall: allHealthy ? 'healthy' : 'degraded',
+    services: health,
+  });
+};
+

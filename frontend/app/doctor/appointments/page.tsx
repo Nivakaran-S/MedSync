@@ -1,12 +1,16 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import Link from 'next/link';
 import { useAuth } from '../../context/AuthContext';
 import { appointmentApi, patientApi } from '../../services/api';
 import { Modal, MedInput as Input, MedButton as Button, showToast } from '../../components/UI';
 import PrescriptionEditor from '../../components/PrescriptionEditor';
-import { User, FileText, Pill, Calendar, ShieldBan, Video } from 'lucide-react';
+import {
+  User, FileText, Pill, Calendar, ShieldBan, Video,
+  CheckCircle, XCircle, Clock, RefreshCcw, Search,
+  ChevronDown, AlertCircle, CreditCard
+} from 'lucide-react';
 
 interface Appointment {
   _id: string;
@@ -16,8 +20,11 @@ interface Appointment {
   slotDate: string;
   slotTime: string;
   reason?: string;
+  consultationFee?: number;
   paymentStatus: string;
   status: string;
+  specialty?: string;
+  notes?: string;
 }
 
 interface PatientRecord {
@@ -37,18 +44,24 @@ interface PatientRecord {
   documents: Array<{ _id: string; fileName: string; fileUrl: string; type: string; uploadDate: string }>;
 }
 
-const statusBadgeClass = (status: string) => {
-  if (status === 'confirmed') return 'low';
-  if (status === 'pending') return 'medium';
-  if (status === 'completed') return 'low';
-  return 'high';
+const STATUS_COLORS: Record<string, { bg: string; text: string }> = {
+  pending:   { bg: '#fff7ed', text: '#ea580c' },
+  confirmed: { bg: '#f0fdf4', text: '#16a34a' },
+  completed: { bg: '#f0f9ff', text: '#0369a1' },
+  cancelled: { bg: '#fef2f2', text: '#dc2626' },
+  rejected:  { bg: '#fef2f2', text: '#dc2626' },
 };
+
+const TABS = ['All', 'Pending', 'Confirmed', 'Completed', 'Cancelled'];
 
 export default function DoctorAppointments() {
   const { user, isLoading } = useAuth();
   const [appointments, setAppointments] = useState<Appointment[]>([]);
-  const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState(0);
+  const [searchQuery, setSearchQuery] = useState('');
 
+  const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(null);
   const [showPrescriptionModal, setShowPrescriptionModal] = useState(false);
   const [showRecordsModal, setShowRecordsModal] = useState(false);
   const [record, setRecord] = useState<PatientRecord | null>(null);
@@ -59,11 +72,14 @@ export default function DoctorAppointments() {
   }, [user]);
 
   const loadAppointments = async () => {
+    setLoading(true);
     try {
       const data = await appointmentApi.getDoctorAppointments(user!.id);
-      setAppointments(data);
+      setAppointments(Array.isArray(data) ? data.sort((a: any, b: any) => new Date(b.slotDate).getTime() - new Date(a.slotDate).getTime()) : []);
     } catch (err) {
-      console.error(err);
+      showToast('Failed to load appointments', 'error');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -74,22 +90,22 @@ export default function DoctorAppointments() {
       } else {
         await appointmentApi.updateStatus(id, { status, notes });
       }
+      showToast(`Appointment ${status}`, 'success');
       loadAppointments();
     } catch {
-      showToast('Failed to update status', 'error');
+      showToast('Failed to update appointment status', 'error');
     }
   };
 
   const handleOpenPrescription = async (appt: Appointment) => {
     setSelectedAppointment(appt);
     setShowPrescriptionModal(true);
-    // Fetch full record to get allergies if not already loaded
     if (!record || record.profile.id !== appt.patientId) {
       try {
         const data = await patientApi.getPatientFull(appt.patientId);
         setRecord(data);
-      } catch (err) {
-        console.warn('Could not load patient profile for allergies', err);
+      } catch {
+        // Allergies unavailable — non-blocking
       }
     }
   };
@@ -110,12 +126,39 @@ export default function DoctorAppointments() {
   };
 
   const onPrescriptionSuccess = () => {
-    // If appointment is confirmed, mark it as completed automatically
     if (selectedAppointment?.status === 'confirmed') {
       handleStatus(selectedAppointment._id, 'completed', 'Prescription issued');
     }
+    setShowPrescriptionModal(false);
   };
 
+  // ── Derived data ──────────────────────────────────────────────────────────
+  const stats = useMemo(() => ({
+    total: appointments.length,
+    pending: appointments.filter(a => a.status === 'pending').length,
+    confirmed: appointments.filter(a => a.status === 'confirmed').length,
+    completed: appointments.filter(a => a.status === 'completed').length,
+    unpaid: appointments.filter(a => a.paymentStatus === 'unpaid' && ['pending', 'confirmed'].includes(a.status)).length,
+  }), [appointments]);
+
+  const filtered = useMemo(() => {
+    let list = appointments;
+    if (activeTab === 1) list = list.filter(a => a.status === 'pending');
+    else if (activeTab === 2) list = list.filter(a => a.status === 'confirmed');
+    else if (activeTab === 3) list = list.filter(a => a.status === 'completed');
+    else if (activeTab === 4) list = list.filter(a => ['cancelled', 'rejected'].includes(a.status));
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase();
+      list = list.filter(a =>
+        a.patientName?.toLowerCase().includes(q) ||
+        a.reason?.toLowerCase().includes(q) ||
+        a.slotDate?.includes(q)
+      );
+    }
+    return list;
+  }, [appointments, activeTab, searchQuery]);
+
+  // ── Guard ─────────────────────────────────────────────────────────────────
   if (isLoading) return <div className="animate-in" style={{ padding: '20px' }}>Loading...</div>;
 
   if (user?.role !== 'doctor') {
@@ -129,131 +172,257 @@ export default function DoctorAppointments() {
 
   return (
     <div className="animate-in">
-      <h1 className="page-title">Manage Appointments</h1>
-      <p className="page-subtitle">Review patient records, accept requests, and issue prescriptions.</p>
-
-      <div className="med-card">
-        {appointments.length === 0 ? (
-          <div className="empty-state">
-            <div className="empty-icon"><Calendar size={40} /></div>
-            <h3>No appointments yet</h3>
-            <p>Bookings from patients will appear here.</p>
-          </div>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-            {appointments.map(a => (
-              <div key={a._id} className="history-item" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
-                <div style={{ minWidth: '240px' }}>
-                  <h4 style={{ margin: 0, fontSize: '1.05rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <User size={16} /> {a.patientName}
-                  </h4>
-                  <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '4px' }}>
-                    {new Date(a.slotDate).toLocaleDateString()} · {a.slotTime}
-                  </div>
-                  <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-                    Reason: {a.reason || 'N/A'} · Payment: {a.paymentStatus}
-                  </div>
-                  <span className={`badge ${statusBadgeClass(a.status)}`} style={{ marginTop: '6px', textTransform: 'uppercase' }}>
-                    {a.status}
-                  </span>
-                </div>
-
-                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                  <button
-                    className="med-button secondary sm"
-                    onClick={() => handleViewRecords(a)}
-                    style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
-                  >
-                    <FileText size={14} /> View Records
-                  </button>
-
-                  {a.status === 'confirmed' && (
-                    <Link
-                      href={`/telemedicine/${a._id}`}
-                      className="med-button secondary sm"
-                      style={{ display: 'flex', alignItems: 'center', gap: '6px', textDecoration: 'none' }}
-                    >
-                      <Video size={14} /> Join Video
-                    </Link>
-                  )}
-
-                  {a.status === 'pending' && (
-                    <>
-                      <button className="med-button primary sm" onClick={() => handleStatus(a._id, 'confirmed')}>Accept</button>
-                      <button className="med-button danger sm" onClick={() => handleStatus(a._id, 'rejected')}>Reject</button>
-                    </>
-                  )}
-
-                  {a.status === 'confirmed' && (
-                    <>
-                      <button
-                        className="med-button primary sm"
-                        onClick={() => handleOpenPrescription(a)}
-                        style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
-                      >
-                        <Pill size={14} /> Issue Prescription
-                      </button>
-                      <button
-                        className="med-button secondary sm"
-                        onClick={() => handleStatus(a._id, 'completed', 'Consultation finished')}
-                      >
-                        Mark Completed
-                      </button>
-                    </>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
+      {/* ── Header ─────────────────────────────────────────────────────── */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '24px', flexWrap: 'wrap', gap: '12px' }}>
+        <div>
+          <h1 className="page-title">My Appointments</h1>
+          <p className="page-subtitle">Review patient requests, accept, issue prescriptions, and join video consultations.</p>
+        </div>
+        <button
+          className="med-button secondary"
+          onClick={loadAppointments}
+          style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
+        >
+          <RefreshCcw size={16} style={{ animation: loading ? 'spin 1s linear infinite' : 'none' }} />
+          Refresh
+        </button>
       </div>
 
-      {/* Prescription modal */}
+      {/* ── Stats bar ─────────────────────────────────────────────────── */}
+      <div className="stats-bar" style={{ marginBottom: '24px' }}>
+        {[
+          { label: 'Total', value: stats.total, color: 'var(--primary)' },
+          { label: 'Pending', value: stats.pending, color: '#ea580c' },
+          { label: 'Confirmed', value: stats.confirmed, color: '#16a34a' },
+          { label: 'Completed', value: stats.completed, color: '#0369a1' },
+          { label: 'Unpaid', value: stats.unpaid, color: '#dc2626' },
+        ].map(s => (
+          <div key={s.label} className="stat-item">
+            <div className="stat-value" style={{ color: s.color }}>{s.value}</div>
+            <div className="stat-label">{s.label}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* ── Filter bar ───────────────────────────────────────────────── */}
+      <div style={{ display: 'flex', gap: '12px', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: '6px', background: '#f1f5f9', borderRadius: '999px', padding: '4px' }}>
+          {TABS.map((tab, i) => (
+            <button
+              key={tab}
+              onClick={() => setActiveTab(i)}
+              style={{
+                border: 'none',
+                borderRadius: '999px',
+                padding: '8px 16px',
+                fontWeight: 600,
+                fontSize: '0.85rem',
+                cursor: 'pointer',
+                transition: 'all 0.2s',
+                background: activeTab === i ? 'white' : 'transparent',
+                color: activeTab === i ? 'var(--primary)' : 'var(--text-secondary)',
+                boxShadow: activeTab === i ? '0 1px 4px rgba(0,0,0,0.1)' : 'none',
+              }}
+            >
+              {tab}{i === 1 && stats.pending > 0 ? ` (${stats.pending})` : ''}
+            </button>
+          ))}
+        </div>
+        <div style={{ flex: 1, minWidth: '220px', position: 'relative' }}>
+          <Search size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+          <input
+            className="med-input"
+            style={{ paddingLeft: '36px', marginBottom: 0, height: '40px' }}
+            placeholder="Search patient name, reason, date…"
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+          />
+        </div>
+      </div>
+
+      {/* ── Appointment list ──────────────────────────────────────────── */}
+      {loading ? (
+        <div style={{ padding: '40px', textAlign: 'center', color: 'var(--text-muted)' }}>Loading appointments…</div>
+      ) : filtered.length === 0 ? (
+        <div className="empty-state med-card" style={{ padding: '60px' }}>
+          <div className="empty-icon"><Calendar size={40} /></div>
+          <h3>No appointments found</h3>
+          <p>{searchQuery ? 'Try different search terms.' : 'Bookings from patients will appear here.'}</p>
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+          {filtered.map(a => {
+            const sc = STATUS_COLORS[a.status] || STATUS_COLORS.cancelled;
+            const isPaid = a.paymentStatus === 'paid';
+            const isUpcoming = ['pending', 'confirmed'].includes(a.status);
+            const isConfirmed = a.status === 'confirmed';
+            const isPending = a.status === 'pending';
+            return (
+              <div
+                key={a._id}
+                className="med-card"
+                style={{ padding: '20px 24px', borderLeft: `4px solid ${sc.text}` }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '16px', flexWrap: 'wrap' }}>
+                  {/* Patient info */}
+                  <div style={{ flex: 1, minWidth: '240px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
+                      <div style={{
+                        width: '36px', height: '36px', borderRadius: '50%',
+                        background: 'linear-gradient(135deg, var(--primary), #7c3aed)',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        color: 'white', fontWeight: 700, fontSize: '0.9rem', flexShrink: 0
+                      }}>
+                        {a.patientName?.charAt(0).toUpperCase()}
+                      </div>
+                      <div>
+                        <div style={{ fontWeight: 700, fontSize: '1rem' }}>{a.patientName}</div>
+                        <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{a.patientEmail}</div>
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '10px' }}>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <Calendar size={13} /> {new Date(a.slotDate + 'T00:00:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}
+                      </span>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <Clock size={13} /> {a.slotTime}
+                      </span>
+                      {a.consultationFee !== undefined && (
+                        <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                          <CreditCard size={13} /> LKR {(a.consultationFee || 0).toLocaleString()}
+                        </span>
+                      )}
+                    </div>
+
+                    {a.reason && (
+                      <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '10px' }}>
+                        <strong>Reason:</strong> {a.reason}
+                      </div>
+                    )}
+
+                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                      <span style={{ padding: '4px 10px', borderRadius: '999px', fontWeight: 700, fontSize: '0.75rem', background: sc.bg, color: sc.text }}>
+                        {a.status.toUpperCase()}
+                      </span>
+                      <span style={{
+                        padding: '4px 10px', borderRadius: '999px', fontWeight: 700, fontSize: '0.75rem',
+                        background: isPaid ? '#f0fdf4' : '#fef2f2',
+                        color: isPaid ? '#16a34a' : '#dc2626',
+                      }}>
+                        {(a.paymentStatus || 'UNPAID').toUpperCase()}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Actions */}
+                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignSelf: 'center' }}>
+                    <button
+                      className="med-button secondary sm"
+                      onClick={() => handleViewRecords(a)}
+                      style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+                    >
+                      <FileText size={14} /> Records
+                    </button>
+
+                    {isConfirmed && (
+                      <Link
+                        href={`/telemedicine/${a._id}`}
+                        className="med-button secondary sm"
+                        style={{ display: 'flex', alignItems: 'center', gap: '6px', textDecoration: 'none' }}
+                      >
+                        <Video size={14} /> Join Video
+                      </Link>
+                    )}
+
+                    {isPending && (
+                      <>
+                        <button
+                          className="med-button primary sm"
+                          onClick={() => handleStatus(a._id, 'confirmed')}
+                          style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+                        >
+                          <CheckCircle size={14} /> Accept
+                        </button>
+                        <button
+                          className="med-button danger sm"
+                          onClick={() => handleStatus(a._id, 'rejected')}
+                          style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+                        >
+                          <XCircle size={14} /> Reject
+                        </button>
+                      </>
+                    )}
+
+                    {isConfirmed && (
+                      <>
+                        <button
+                          className="med-button primary sm"
+                          onClick={() => handleOpenPrescription(a)}
+                          style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+                        >
+                          <Pill size={14} /> Prescribe
+                        </button>
+                        <button
+                          className="med-button secondary sm"
+                          onClick={() => handleStatus(a._id, 'completed', 'Consultation finished')}
+                        >
+                          Mark Done
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* ── Prescription Modal ─────────────────────────────────────── */}
       <Modal
         isOpen={showPrescriptionModal}
         onClose={() => setShowPrescriptionModal(false)}
-        title="Issuing Clinical Treatment Plan"
+        title="Issue Clinical Treatment Plan"
         width="800px"
       >
-        <PrescriptionEditor 
+        <PrescriptionEditor
           appointmentId={selectedAppointment?._id || ''}
           patientId={selectedAppointment?.patientId || ''}
           patientName={selectedAppointment?.patientName || ''}
-          patientAllergies={record?.profile?.allergies ? (typeof record.profile.allergies === 'string' ? [record.profile.allergies] : record.profile.allergies) : []}
+          patientAllergies={record?.profile?.allergies ? (typeof record.profile.allergies === 'string' ? [record.profile.allergies] : record.profile.allergies as any) : []}
           doctorName={user?.name}
           onSuccess={onPrescriptionSuccess}
           onCancel={() => setShowPrescriptionModal(false)}
         />
       </Modal>
 
-      {/* Records modal */}
+      {/* ── Patient Records Modal ──────────────────────────────────── */}
       <Modal
         isOpen={showRecordsModal}
         onClose={() => setShowRecordsModal(false)}
-        title={`Records for ${selectedAppointment?.patientName || ''}`}
+        title={`Records — ${selectedAppointment?.patientName || ''}`}
       >
         {recordLoading ? (
-          <div style={{ padding: '16px' }}>Loading patient record…</div>
+          <div style={{ padding: '24px', textAlign: 'center' }}>Loading patient record…</div>
         ) : !record ? (
-          <div style={{ padding: '16px' }}>No record available.</div>
+          <div style={{ padding: '16px', color: 'var(--text-muted)' }}>No record available.</div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
             <section>
-              <h4 style={{ marginBottom: '8px', color: 'var(--primary-dark)' }}>Profile</h4>
-              <div style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', lineHeight: 1.8 }}>
+              <h4 style={{ marginBottom: '8px', color: 'var(--primary-dark)' }}>Patient Profile</h4>
+              <div style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', lineHeight: 1.8, background: 'var(--bg-main)', borderRadius: 'var(--radius-sm)', padding: '12px' }}>
                 <div>Email: {record.profile.email}</div>
                 <div>Phone: {record.profile.phone || '—'}</div>
                 <div>Gender: {record.profile.gender || '—'}</div>
                 <div>DOB: {record.profile.dateOfBirth ? new Date(record.profile.dateOfBirth).toLocaleDateString() : '—'}</div>
-                <div>Blood type: {record.profile.bloodType || '—'}</div>
-                <div>Allergies: {record.profile.allergies || '—'}</div>
+                <div>Blood Type: {record.profile.bloodType || '—'}</div>
+                <div>Allergies: <strong style={{ color: record.profile.allergies ? '#dc2626' : 'inherit' }}>{record.profile.allergies || '—'}</strong></div>
               </div>
             </section>
 
             <section>
-              <h4 style={{ marginBottom: '8px', color: 'var(--primary-dark)' }}>
-                Medical History ({record.medicalHistory.length})
-              </h4>
+              <h4 style={{ marginBottom: '8px', color: 'var(--primary-dark)' }}>Medical History ({record.medicalHistory.length})</h4>
               {record.medicalHistory.length === 0 ? (
                 <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>No history recorded.</p>
               ) : (
@@ -262,9 +431,7 @@ export default function DoctorAppointments() {
                     <div key={h._id} style={{ padding: '10px 12px', background: 'var(--bg-main)', borderRadius: 'var(--radius-sm)', fontSize: '0.88rem' }}>
                       <strong>{h.description}</strong>
                       {h.diagnosis && <div>Diagnosis: {h.diagnosis}</div>}
-                      <div style={{ color: 'var(--text-secondary)' }}>
-                        {h.doctor ? `${h.doctor} · ` : ''}{new Date(h.date).toLocaleDateString()}
-                      </div>
+                      <div style={{ color: 'var(--text-secondary)' }}>{h.doctor ? `${h.doctor} · ` : ''}{new Date(h.date).toLocaleDateString()}</div>
                       {h.notes && <div style={{ fontStyle: 'italic', color: 'var(--text-secondary)' }}>{h.notes}</div>}
                     </div>
                   ))}
@@ -273,9 +440,7 @@ export default function DoctorAppointments() {
             </section>
 
             <section>
-              <h4 style={{ marginBottom: '8px', color: 'var(--primary-dark)' }}>
-                Prescriptions ({record.prescriptions.length})
-              </h4>
+              <h4 style={{ marginBottom: '8px', color: 'var(--primary-dark)' }}>Prescriptions ({record.prescriptions.length})</h4>
               {record.prescriptions.length === 0 ? (
                 <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>No prescriptions recorded.</p>
               ) : (
@@ -283,12 +448,8 @@ export default function DoctorAppointments() {
                   {record.prescriptions.map(p => (
                     <div key={p._id} style={{ padding: '10px 12px', background: 'var(--bg-main)', borderRadius: 'var(--radius-sm)', fontSize: '0.88rem' }}>
                       <strong>{p.medication}</strong> — {p.dosage}
-                      <div style={{ color: 'var(--text-secondary)' }}>
-                        {p.frequency || '—'} · {p.duration || '—'}
-                      </div>
-                      <div style={{ color: 'var(--text-muted)', fontSize: '0.82rem' }}>
-                        {p.prescribedBy || '—'} · {new Date(p.date).toLocaleDateString()}
-                      </div>
+                      <div style={{ color: 'var(--text-secondary)' }}>{p.frequency || '—'} · {p.duration || '—'}</div>
+                      <div style={{ color: 'var(--text-muted)', fontSize: '0.82rem' }}>{p.prescribedBy || '—'} · {new Date(p.date).toLocaleDateString()}</div>
                     </div>
                   ))}
                 </div>
@@ -296,9 +457,7 @@ export default function DoctorAppointments() {
             </section>
 
             <section>
-              <h4 style={{ marginBottom: '8px', color: 'var(--primary-dark)' }}>
-                Documents ({record.documents.length})
-              </h4>
+              <h4 style={{ marginBottom: '8px', color: 'var(--primary-dark)' }}>Documents ({record.documents.length})</h4>
               {record.documents.length === 0 ? (
                 <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>No documents uploaded.</p>
               ) : (
@@ -307,10 +466,11 @@ export default function DoctorAppointments() {
                     <div key={d._id} style={{ padding: '10px 12px', background: 'var(--bg-main)', borderRadius: 'var(--radius-sm)', fontSize: '0.88rem', display: 'flex', justifyContent: 'space-between' }}>
                       <div>
                         <strong>{d.fileName}</strong>
-                        <div style={{ color: 'var(--text-secondary)' }}>
-                          {d.type} · {new Date(d.uploadDate).toLocaleDateString()}
-                        </div>
+                        <div style={{ color: 'var(--text-secondary)' }}>{d.type} · {new Date(d.uploadDate).toLocaleDateString()}</div>
                       </div>
+                      {d.fileUrl && (
+                        <a href={d.fileUrl} target="_blank" rel="noopener noreferrer" className="med-button secondary sm">View</a>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -319,6 +479,10 @@ export default function DoctorAppointments() {
           </div>
         )}
       </Modal>
+
+      <style jsx>{`
+        @keyframes spin { to { transform: rotate(360deg); } }
+      `}</style>
     </div>
   );
 }

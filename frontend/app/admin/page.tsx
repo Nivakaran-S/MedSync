@@ -196,11 +196,11 @@ export default function AdminDashboard() {
             <h3 className="card-title" style={{ margin: 0 }}>Infrastructure</h3>
           </div>
           <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginBottom: '18px' }}>
-            8 microservices, MongoDB, Redis, Kafka — all healthy. Run <code>docker compose ps</code> for live state.
+            Live health status of all 8 microservices — latency monitoring and up/down indicators.
           </p>
-          <button className="med-button secondary" style={{ width: '100%', justifyContent: 'center', display: 'flex', alignItems: 'center', gap: '8px', opacity: 0.6, cursor: 'not-allowed' }}>
-            <LayoutDashboard size={16} /> Health Metrics (soon)
-          </button>
+          <Link href="/admin/health" className="med-button secondary" style={{ width: '100%', justifyContent: 'center', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <LayoutDashboard size={16} /> Service Health Dashboard
+          </Link>
         </div>
       </div>
 

@@ -1,3 +1,4 @@
+const AUTH_SERVICE_URL = process.env.NEXT_PUBLIC_AUTH_SERVICE_URL || 'http://localhost:5000/api/auth';
 const PATIENT_SERVICE_URL = process.env.NEXT_PUBLIC_PATIENT_SERVICE_URL || 'http://localhost:3001/api/patients';
 const DOCTOR_SERVICE_URL = process.env.NEXT_PUBLIC_DOCTOR_SERVICE_URL || 'http://localhost:3002/api/doctors';
 const APPOINTMENT_SERVICE_URL = process.env.NEXT_PUBLIC_APPOINTMENT_SERVICE_URL || 'http://localhost:3003/api/appointments';
@@ -383,6 +384,12 @@ export const doctorApi = {
     const response = await fetch(`${DOCTOR_SERVICE_URL}/prescriptions/verify/${verificationId}`);
     return parseOrThrow(response, 'Prescription not found or invalid');
   },
+  updateDoctorStatus: async (id: string, isActive: boolean) => {
+    const response = await fetch(`${DOCTOR_SERVICE_URL}/${id}/status`, {
+      method: 'PATCH', headers: getAuthHeaders(), body: JSON.stringify({ isActive }),
+    });
+    return parseOrThrow(response, 'Failed to update doctor status');
+  },
 };
 
 export interface SymptomAnalyzePayload {
@@ -583,5 +590,12 @@ export const paymentApi = {
   adminGetAllPayments: async () => {
     const response = await fetch(PAYMENT_SERVICE_URL, { headers: getAuthHeaders() });
     return parseOrThrow(response, 'Failed to fetch all system payments');
+  },
+};
+
+export const platformApi = {
+  getPlatformHealth: async () => {
+    const response = await fetch(`${AUTH_SERVICE_URL}/health`, { headers: getAuthHeaders() });
+    return parseOrThrow(response, 'Failed to fetch platform health');
   },
 };

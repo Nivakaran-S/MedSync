@@ -495,3 +495,42 @@ exports.getPrescriptionByVerifyId = async (req, res) => {
     res.status(500).json({ message: error.message });
   }
 };
+
+// ── Admin: Suspend / Reactivate a Doctor ──────────────────────────────────────
+exports.suspendDoctor = async (req, res) => {
+  try {
+    if (req.user?.role !== 'admin') {
+      return res.status(403).json({ message: 'Admin access required.' });
+    }
+
+    const { isActive } = req.body;
+    if (typeof isActive !== 'boolean') {
+      return res.status(400).json({ message: 'isActive (boolean) is required.' });
+    }
+
+    const doctor = await Doctor.findByIdAndUpdate(
+      req.params.id,
+      { isActive },
+      { new: true }
+    );
+    if (!doctor) return res.status(404).json({ message: 'Doctor not found' });
+
+    if (!isActive) {
+      await sendEvent('doctor-events', {
+        type: 'DOCTOR_SUSPENDED',
+        doctorId: String(doctor._id),
+        name: doctor.name,
+        email: doctor.contact?.email,
+        timestamp: new Date(),
+      });
+    }
+
+    const doctorObj = doctor.toObject();
+    delete doctorObj.password;
+    res.json({ message: isActive ? 'Doctor reactivated successfully' : 'Doctor suspended successfully', doctor: doctorObj });
+  } catch (error) {
+    console.error('[Doctor Service] Suspend error:', error);
+    res.status(500).json({ message: error.message });
+  }
+};
+

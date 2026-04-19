@@ -44,7 +44,7 @@ exports.getDoctorDetails = async (req, res, next) => {
 exports.createAppointment = async (req, res, next) => {
     try {
         const {
-            patientId, patientName, patientEmail,
+            patientId, patientName, patientEmail, patientPhone,
             doctorId, doctorName, specialty,
             slotDate, slotTime, reason, consultationFee,
         } = req.body;
@@ -93,7 +93,7 @@ exports.createAppointment = async (req, res, next) => {
         }
 
         const appointment = new Appointment({
-            patientId, patientName, patientEmail,
+            patientId, patientName, patientEmail, patientPhone,
             doctorId, doctorName, specialty,
             slotDate, slotTime, reason, consultationFee,
         });
@@ -107,6 +107,7 @@ exports.createAppointment = async (req, res, next) => {
                 patientId,
                 patientName,
                 patientEmail,
+                patientPhone: patientPhone || null,
                 doctorId,
                 doctorName,
                 specialty,
@@ -226,6 +227,23 @@ exports.updateStatus = async (req, res, next) => {
         if (notes) appointment.notes = notes;
 
         await appointment.save();
+
+        // Notify patient when doctor confirms or rejects
+        if (['confirmed', 'rejected'].includes(status)) {
+            await sendEvent('appointment-events', {
+                type: 'APPOINTMENT_STATUS_UPDATED',
+                data: {
+                    status,
+                    patientName: appointment.patientName,
+                    patientEmail: appointment.patientEmail,
+                    patientPhone: appointment.patientPhone || null,
+                    doctorName: appointment.doctorName,
+                    slotDate: appointment.slotDate,
+                    slotTime: appointment.slotTime,
+                }
+            });
+        }
+
         res.json(appointment);
     } catch (error) {
         next(error);
@@ -356,6 +374,9 @@ exports.cancelAppointment = async (req, res, next) => {
             data: {
                 appointmentId: appointment._id,
                 patientId: appointment.patientId,
+                patientEmail: appointment.patientEmail,
+                patientPhone: appointment.patientPhone || null,
+                doctorName: appointment.doctorName,
                 paymentStatus: appointment.paymentStatus,
                 wasPaid,
                 cancelledBy: appointment.cancelledBy,
