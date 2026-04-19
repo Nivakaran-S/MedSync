@@ -1,0 +1,48 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ai-symptom-checker
+  namespace: medsync
+  labels:
+    app: ai-symptom-checker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ai-symptom-checker
+  template:
+    metadata:
+      labels:
+        app: ai-symptom-checker
+    spec:
+      containers:
+      - name: ai-symptom-checker
+        image: ai-symptom-checker:latest
+        ports:
+        - containerPort: 3007
+        env:
+        - name: KAFKA_BROKERS
+          value: "kafka:9092"
+        - name: PORT
+          value: "3007"
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ai-symptom-checker
+  namespace: medsync
+spec:
+  selector:
+    app: ai-symptom-checker
+  ports:
+  - protocol: TCP
+    port: 3007
+    targetPort: 3007
+  type: ClusterIP

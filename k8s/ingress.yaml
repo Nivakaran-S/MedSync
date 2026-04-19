@@ -1,0 +1,75 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: medsync-ingress
+  namespace: medsync
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+spec:
+  rules:
+  - host: medsync.local
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: frontend
+            port:
+              number: 3000
+      - path: /auth
+        pathType: Prefix
+        backend:
+          service:
+            name: auth
+            port:
+              number: 5000
+      - path: /api/patient
+        pathType: Prefix
+        backend:
+          service:
+            name: patient-management
+            port:
+              number: 3001
+      - path: /api/doctor
+        pathType: Prefix
+        backend:
+          service:
+            name: doctor-management
+            port:
+              number: 3002
+      - path: /api/appointment
+        pathType: Prefix
+        backend:
+          service:
+            name: appointment
+            port:
+              number: 3003
+      - path: /api/telemedicine
+        pathType: Prefix
+        backend:
+          service:
+            name: telemedicine
+            port:
+              number: 3004
+      - path: /api/payment
+        pathType: Prefix
+        backend:
+          service:
+            name: payment
+            port:
+              number: 3005
+      - path: /api/notification
+        pathType: Prefix
+        backend:
+          service:
+            name: notification
+            port:
+              number: 3006
+      - path: /api/ai
+        pathType: Prefix
+        backend:
+          service:
+            name: ai-symptom-checker
+            port:
+              number: 3007

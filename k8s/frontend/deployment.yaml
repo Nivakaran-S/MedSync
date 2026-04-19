@@ -1,0 +1,47 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+  namespace: medsync
+  labels:
+    app: frontend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: frontend
+  template:
+    metadata:
+      labels:
+        app: frontend
+    spec:
+      containers:
+      - name: frontend
+        image: frontend:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 3000
+        env:
+        - name: NEXT_PUBLIC_AUTH_SERVICE_URL
+          value: "http://medsync.local/api/auth"
+        - name: NEXT_PUBLIC_PATIENT_SERVICE_URL
+          value: "http://medsync.local/api/patient"
+        - name: NEXT_PUBLIC_DOCTOR_SERVICE_URL
+          value: "http://medsync.local/api/doctor"
+        - name: NEXT_PUBLIC_APPOINTMENT_SERVICE_URL
+          value: "http://medsync.local/api/appointment"
+        - name: NEXT_PUBLIC_TELEMEDICINE_SERVICE_URL
+          value: "http://medsync.local/api/telemedicine"
+        - name: NEXT_PUBLIC_PAYMENT_SERVICE_URL
+          value: "http://medsync.local/api/payment"
+        - name: NEXT_PUBLIC_NOTIFICATION_SERVICE_URL
+          value: "http://medsync.local/api/notification"
+        - name: NEXT_PUBLIC_SYMPTOM_CHECKER_URL
+          value: "http://medsync.local/api/ai"
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"

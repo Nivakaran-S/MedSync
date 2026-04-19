@@ -1,0 +1,50 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: appointment
+  namespace: medsync
+  labels:
+    app: appointment
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: appointment
+  template:
+    metadata:
+      labels:
+        app: appointment
+    spec:
+      containers:
+      - name: appointment
+        image: appointment:latest
+        ports:
+        - containerPort: 3003
+        env:
+        - name: KAFKA_BROKERS
+          value: "kafka:9092"
+        - name: MONGO_URI
+          value: "mongodb://mongo:27017/appointment_db"
+        - name: PORT
+          value: "3003"
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: appointment
+  namespace: medsync
+spec:
+  selector:
+    app: appointment
+  ports:
+  - protocol: TCP
+    port: 3003
+    targetPort: 3003
+  type: ClusterIP
