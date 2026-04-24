@@ -423,7 +423,7 @@ exports.deleteAvailability = async (req, res) => {
 // ── Prescriptions (QR-signed, verifiable) ─────────────────────────────────────
 exports.issuePrescription = async (req, res) => {
   try {
-    const { patientId, patientName, doctorName, appointmentId, medications, instructions, signatureBase64 } = req.body;
+    const { patientId, patientName, patientEmail, patientPhone, doctorName, appointmentId, medications, instructions, signatureBase64 } = req.body;
 
     if (req.user && req.user.role !== 'doctor' && req.user.role !== 'admin') {
       return res.status(403).json({ message: 'Only doctors can issue prescriptions.' });
@@ -449,12 +449,14 @@ exports.issuePrescription = async (req, res) => {
 
     await prescription.save();
 
-    // Notify other services (Patient Management) via Kafka
+    // Notify other services (Patient Management, Notification) via Kafka
     await sendEvent('doctor-events', {
       type: 'PRESCRIPTION_ISSUED',
       prescriptionId: prescription._id,
       patientId: prescription.patientId,
       patientName: prescription.patientName,
+      patientEmail: patientEmail || null,
+      patientPhone: patientPhone || null,
       doctorName: prescription.doctorName,
       medications: prescription.medications,
       instructions: prescription.instructions,

@@ -78,8 +78,11 @@ services:
     depends_on:
       kafka:
         condition: service_healthy
+      mongo:
+        condition: service_healthy
     env_file: ./.env
     environment:
+      - MONGO_URI=${MONGO_BASE:-mongodb://mongo:27017}/notification_db
       - PORT=3006
 
   patient-management:

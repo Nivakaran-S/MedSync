@@ -234,6 +234,25 @@ exports.updateStatus = async (req, res, next) => {
                 type: 'APPOINTMENT_STATUS_UPDATED',
                 data: {
                     status,
+                    appointmentId: appointment._id,
+                    patientId: appointment.patientId,
+                    patientName: appointment.patientName,
+                    patientEmail: appointment.patientEmail,
+                    patientPhone: appointment.patientPhone || null,
+                    doctorName: appointment.doctorName,
+                    slotDate: appointment.slotDate,
+                    slotTime: appointment.slotTime,
+                }
+            });
+        }
+
+        // Notify patient when a consultation is marked completed
+        if (status === 'completed') {
+            await sendEvent('appointment-events', {
+                type: 'APPOINTMENT_COMPLETED',
+                data: {
+                    appointmentId: appointment._id,
+                    patientId: appointment.patientId,
                     patientName: appointment.patientName,
                     patientEmail: appointment.patientEmail,
                     patientPhone: appointment.patientPhone || null,

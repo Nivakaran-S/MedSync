@@ -1,6 +1,7 @@
 const { Kafka } = require('kafkajs');
 const emailService = require('../services/emailService');
 const smsService = require('../services/smsService');
+const { createInAppNotification } = require('../controllers/notificationController');
 
 const kafka = new Kafka({
   clientId: 'notification-service',
@@ -25,24 +26,34 @@ const connectConsumer = async () => {
           const payload = JSON.parse(message.value.toString());
           console.log(`[Notification Service] Received event on ${topic}:`, payload.type);
 
+          // Some publishers use { type, data: {...} } and others flatten fields
+          // onto the payload itself (e.g. PRESCRIPTION_ISSUED). Normalize here.
+          const data = payload.data || payload;
+
           switch (payload.type) {
             case 'APPOINTMENT_CREATED':
-              await handleAppointmentCreated(payload.data);
+              await handleAppointmentCreated(data);
               break;
             case 'APPOINTMENT_STATUS_UPDATED':
-              await handleAppointmentStatusUpdated(payload.data);
+              await handleAppointmentStatusUpdated(data);
               break;
             case 'APPOINTMENT_CANCELLED':
-              await handleAppointmentCancelled(payload.data);
+              await handleAppointmentCancelled(data);
+              break;
+            case 'APPOINTMENT_COMPLETED':
+              await handleAppointmentCompleted(data);
               break;
             case 'PAYMENT_SUCCESSFUL':
-              await handlePaymentSuccessful(payload.data);
+              await handlePaymentSuccessful(data);
+              break;
+            case 'PRESCRIPTION_ISSUED':
+              await handlePrescriptionIssued(data);
               break;
             case 'PATIENT_REGISTERED':
-              await handlePatientRegistered(payload.data);
+              await handlePatientRegistered(data);
               break;
             case 'DOCTOR_REGISTERED':
-              await handleDoctorRegistered(payload.data);
+              await handleDoctorRegistered(data);
               break;
             default:
               console.log(`[Notification Service] No handler for event type: ${payload.type}`);
@@ -59,7 +70,7 @@ const connectConsumer = async () => {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-const notify = async ({ email, phone, subject, text }) => {
+const notify = async ({ email, phone, subject, text, userId, category, metadata }) => {
   if (email) {
     await emailService.sendEmail(email, subject, text).catch(e =>
       console.error('[Notification] Email failed:', e.message)
@@ -70,56 +81,155 @@ const notify = async ({ email, phone, subject, text }) => {
       console.error('[Notification] SMS failed:', e.message)
     );
   }
+  if (userId) {
+    await createInAppNotification({
+      userId,
+      title: subject,
+      subject,
+      message: text,
+      category: category || 'other',
+      metadata: metadata || {}
+    });
+  }
 };
 
 // ── Handlers ──────────────────────────────────────────────────────────────────
 
 const handleAppointmentCreated = async (data) => {
-  const { patientEmail, patientPhone, doctorName, date, time } = data;
+  const { patientId, patientEmail, patientPhone, doctorName, date, time, appointmentId } = data;
   const subject = `Appointment Booked with Dr. ${doctorName}`;
   const text = `Your appointment with Dr. ${doctorName} has been booked for ${new Date(date).toLocaleDateString()} at ${time}. Awaiting confirmation.`;
-  await notify({ email: patientEmail, phone: patientPhone, subject, text });
+  await notify({
+    email: patientEmail,
+    phone: patientPhone,
+    subject,
+    text,
+    userId: patientId,
+    category: 'appointment',
+    metadata: { appointmentId, status: 'pending' }
+  });
 };
 
 const handleAppointmentStatusUpdated = async (data) => {
-  const { status, patientEmail, patientPhone, doctorName, slotDate, slotTime } = data;
-  const label = status === 'confirmed' ? 'Confirmed' : 'Rejected';
+  const { status, patientId, patientEmail, patientPhone, doctorName, slotDate, slotTime, appointmentId } = data;
+  const label = status === 'confirmed' ? 'Confirmed' : status === 'rejected' ? 'Rejected' : status;
   const subject = `Appointment ${label} — Dr. ${doctorName}`;
   const text = status === 'confirmed'
     ? `Great news! Your appointment with Dr. ${doctorName} on ${new Date(slotDate).toLocaleDateString()} at ${slotTime} has been CONFIRMED.`
-    : `Your appointment request with Dr. ${doctorName} on ${new Date(slotDate).toLocaleDateString()} at ${slotTime} was not accepted. Please book a different slot.`;
-  await notify({ email: patientEmail, phone: patientPhone, subject, text });
+    : status === 'rejected'
+      ? `Your appointment request with Dr. ${doctorName} on ${new Date(slotDate).toLocaleDateString()} at ${slotTime} was not accepted. Please book a different slot.`
+      : `Your appointment with Dr. ${doctorName} is now ${status}.`;
+  await notify({
+    email: patientEmail,
+    phone: patientPhone,
+    subject,
+    text,
+    userId: patientId,
+    category: 'appointment',
+    metadata: { appointmentId, status }
+  });
 };
 
 const handleAppointmentCancelled = async (data) => {
-  const { patientEmail, patientPhone, doctorName, cancelledBy } = data;
+  const { patientId, patientEmail, patientPhone, doctorName, cancelledBy, appointmentId } = data;
   const subject = `Appointment Cancelled`;
   const text = `Your appointment with Dr. ${doctorName} has been cancelled${cancelledBy ? ` by ${cancelledBy}` : ''}. Please book a new appointment if needed.`;
-  await notify({ email: patientEmail, phone: patientPhone, subject, text });
+  await notify({
+    email: patientEmail,
+    phone: patientPhone,
+    subject,
+    text,
+    userId: patientId,
+    category: 'appointment',
+    metadata: { appointmentId, status: 'cancelled', cancelledBy }
+  });
+};
+
+const handleAppointmentCompleted = async (data) => {
+  const { patientId, patientEmail, patientPhone, doctorName, slotDate, slotTime, appointmentId } = data;
+  const subject = `Consultation Completed — Dr. ${doctorName}`;
+  const dateStr = slotDate ? new Date(slotDate).toLocaleDateString() : '';
+  const text = `Your consultation with Dr. ${doctorName}${dateStr ? ` on ${dateStr}` : ''}${slotTime ? ` at ${slotTime}` : ''} has been marked as completed. Thank you for using MedSync.`;
+  await notify({
+    email: patientEmail,
+    phone: patientPhone,
+    subject,
+    text,
+    userId: patientId,
+    category: 'appointment',
+    metadata: { appointmentId, status: 'completed' }
+  });
 };
 
 const handlePaymentSuccessful = async (data) => {
-  const { patientEmail, patientPhone, amount, appointmentId } = data;
+  const { patientId, patientEmail, patientPhone, amount, appointmentId } = data;
   const subject = `Payment Successful — MedSync`;
   const text = `We have successfully received your payment of $${amount} for appointment ${appointmentId}. Your booking is now confirmed.`;
-  await notify({ email: patientEmail, phone: patientPhone, subject, text });
+  await notify({
+    email: patientEmail,
+    phone: patientPhone,
+    subject,
+    text,
+    userId: patientId,
+    category: 'payment',
+    metadata: { appointmentId, amount }
+  });
+};
+
+const handlePrescriptionIssued = async (data) => {
+  const { patientId, patientEmail, patientPhone, doctorName, verificationId, medications, instructions } = data;
+  const subject = `New Prescription from Dr. ${doctorName}`;
+  const medLine = Array.isArray(medications) && medications.length
+    ? medications.map(m => m.name || m.medication || (typeof m === 'string' ? m : '')).filter(Boolean).join(', ')
+    : '';
+  const body = [
+    `Dr. ${doctorName} has issued a new prescription for you.`,
+    medLine ? `Medications: ${medLine}.` : '',
+    instructions ? `Instructions: ${instructions}` : '',
+    verificationId ? `Verification ID: ${verificationId}` : ''
+  ].filter(Boolean).join(' ');
+  await notify({
+    email: patientEmail,
+    phone: patientPhone,
+    subject,
+    text: body,
+    userId: patientId,
+    category: 'prescription',
+    metadata: { verificationId, doctorName }
+  });
 };
 
 const handlePatientRegistered = async (data) => {
-  const { email, phone, name } = data;
+  const { patientId, _id, email, phone, name } = data;
   const subject = 'Welcome to MedSync';
   const text = `Hello ${name},\n\nWelcome to MedSync! Your account has been successfully created. You can now search for doctors and book your first appointment.`;
-  await notify({ email, phone, subject, text });
+  await notify({
+    email,
+    phone,
+    subject,
+    text,
+    userId: patientId || _id,
+    category: 'account'
+  });
 };
 
 const handleDoctorRegistered = async (data) => {
-  const { email, name, specialty } = data;
+  const { doctorId, _id, email, name, specialty } = data;
   const subject = 'Welcome to MedSync — Doctor Account Created';
   const text = `Hello Dr. ${name},\n\nYour MedSync doctor account (${specialty}) has been created. An admin will review and verify your credentials shortly.`;
   if (email) {
     await emailService.sendEmail(email, subject, text).catch(e =>
       console.error('[Notification] Doctor welcome email failed:', e.message)
     );
+  }
+  if (doctorId || _id) {
+    await createInAppNotification({
+      userId: doctorId || _id,
+      title: subject,
+      subject,
+      message: text,
+      category: 'account'
+    });
   }
 };
 
