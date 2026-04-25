@@ -16,6 +16,8 @@ export default function ProfilePage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
+  const [photoFile, setPhotoFile] = useState<File | null>(null);
+
   const fetchProfile = async () => {
     try {
       const data = await patientApi.getProfile();
@@ -34,12 +36,28 @@ export default function ProfilePage() {
 
   useEffect(() => { fetchProfile(); }, []);
 
+  const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      setPhotoFile(e.target.files[0]);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
     try {
-      await patientApi.updateProfile(profile);
+      const formData = new FormData();
+      Object.keys(profile).forEach(key => {
+        if (profile[key] !== undefined && profile[key] !== null) {
+          formData.append(key, profile[key]);
+        }
+      });
+      if (photoFile) {
+        formData.append('photo', photoFile);
+      }
+      await patientApi.updateProfile(formData);
       showToast('Profile updated successfully!', 'success');
+      setPhotoFile(null);
     } catch (error) {
       showToast('Error updating profile.', 'error');
     } finally {
@@ -73,7 +91,11 @@ export default function ProfilePage() {
       {/* Profile Header */}
       <div className="profile-header">
         <div className="avatar lg">
-          {profile.firstName?.[0]?.toUpperCase() || '?'}{profile.lastName?.[0]?.toUpperCase() || '?'}
+          {profile.photoUrl ? (
+            <img src={profile.photoUrl} alt="Profile" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
+          ) : (
+            `${profile.firstName?.[0]?.toUpperCase() || '?'}${profile.lastName?.[0]?.toUpperCase() || '?'}`
+          )}
         </div>
         <div className="profile-info">
           <h2>{profile.firstName} {profile.lastName}</h2>
@@ -83,6 +105,20 @@ export default function ProfilePage() {
       </div>
 
       <form onSubmit={handleSubmit}>
+        {/* Photo Upload */}
+        <Card title="Profile Photo" icon="📷">
+          <div className="med-input-group">
+            <label className="med-label">Upload Profile Photo</label>
+            <input
+              type="file"
+              accept="image/*"
+              onChange={handlePhotoChange}
+              className="med-input"
+            />
+            {photoFile && <p>Selected: {photoFile.name}</p>}
+          </div>
+        </Card>
+
         {/* Personal Information */}
         <Card title="Personal Information" icon="👤">
           <div className="grid-2">

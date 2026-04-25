@@ -6,6 +6,7 @@ const jwt = require('jsonwebtoken');
 const qrcode = require('qrcode');
 const crypto = require('crypto');
 const { sendEvent } = require('../utils/kafka');
+const { uploadImage } = require('../utils/cloudinary');
 
 const APPOINTMENT_SERVICE_URL =
   process.env.APPOINTMENT_SERVICE_URL || 'http://localhost:3003';
@@ -47,7 +48,7 @@ const hasBookedOrConfirmedForSlot = async ({ doctorId, day, startTime, endTime, 
 
 exports.registerDoctor = async (req, res) => {
   try {
-    const { name, specialty, qualifications, contact, bio, password, consultationFee } = req.body;
+    const { name, specialty, qualifications, contact, bio, password, consultationFee, licenseImage, licenseImageUrl: providedLicenseImageUrl } = req.body;
 
     if (!password || !contact || !contact.email) {
       return res.status(400).json({ message: 'Email and password are required.' });
@@ -74,6 +75,12 @@ exports.registerDoctor = async (req, res) => {
 
     const hashedPassword = await bcrypt.hash(password, 12);
 
+    let licenseImageUrl = providedLicenseImageUrl || '';
+    if (!licenseImageUrl && licenseImage) {
+      const uploadResult = await uploadImage(licenseImage, { folder: 'doctor_licenses' });
+      licenseImageUrl = uploadResult.secure_url;
+    }
+
     const doctor = new Doctor({
       name,
       specialty: specialtyResolved,
@@ -82,6 +89,7 @@ exports.registerDoctor = async (req, res) => {
       bio,
       consultationFee: Number(consultationFee || 0),
       password: hashedPassword,
+      licenseImageUrl,
       isVerified: false,
     });
 
@@ -126,6 +134,14 @@ exports.login = async (req, res) => {
     const isMatch = await bcrypt.compare(password, doctor.password);
     if (!isMatch) return res.status(401).json({ message: 'Invalid email or password.' });
 
+    if (!doctor.isVerified) {
+      return res.status(401).json({ message: 'Your license is pending approval by an administrator.' });
+    }
+
+    if (!doctor.isActive) {
+      return res.status(403).json({ message: 'Your account is currently inactive. Contact support for help.' });
+    }
+
     const token = jwt.sign(
       { userId: doctor._id, doctorId: doctor._id, email: doctor.contact.email, role: 'doctor' },
       JWT_SECRET,
@@ -157,7 +173,19 @@ exports.updateDoctor = async (req, res) => {
     if (req.user && req.user.role !== 'admin' && req.user.id !== req.params.id) {
       return res.status(403).json({ message: 'Forbidden: You can only update your own profile.' });
     }
-    const doctor = await Doctor.findByIdAndUpdate(req.params.id, req.body, { new: true });
+
+    const updates = { ...req.body };
+    if (req.user?.role !== 'admin') {
+      delete updates.isVerified;
+      delete updates.isActive;
+      delete updates.isLicenseApproved;
+      delete updates.licenseImageUrl;
+      if (updates.contact) {
+        delete updates.contact.email;
+      }
+    }
+
+    const doctor = await Doctor.findByIdAndUpdate(req.params.id, updates, { new: true });
     if (!doctor) return res.status(404).json({ message: 'Doctor not found' });
     res.json(doctor);
   } catch (error) {
@@ -530,6 +558,47 @@ exports.suspendDoctor = async (req, res) => {
     res.json({ message: isActive ? 'Doctor reactivated successfully' : 'Doctor suspended successfully', doctor: doctorObj });
   } catch (error) {
     console.error('[Doctor Service] Suspend error:', error);
+    res.status(500).json({ message: error.message });
+  }
+};
+
+exports.listPendingLicenses = async (req, res) => {
+  try {
+    if (req.user?.role !== 'admin') {
+      return res.status(403).json({ message: 'Admin access required.' });
+    }
+    const doctors = await Doctor.find({ isVerified: false, licenseImageUrl: { $ne: null, $ne: '' } });
+    res.json(doctors);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+exports.updateLicenseStatus = async (req, res) => {
+  try {
+    if (req.user?.role !== 'admin') {
+      return res.status(403).json({ message: 'Admin access required.' });
+    }
+    const { isApproved } = req.body;
+    const doctor = await Doctor.findById(req.params.id);
+    if (!doctor) return res.status(404).json({ message: 'Doctor not found' });
+
+    if (isApproved) {
+      const updatedDoctor = await Doctor.findByIdAndUpdate(
+        req.params.id,
+        { isVerified: true, isLicenseApproved: true, isActive: true },
+        { new: true }
+      );
+      res.json({ message: 'License approved successfully', doctor: updatedDoctor });
+    } else {
+      const updatedDoctor = await Doctor.findByIdAndUpdate(
+        req.params.id,
+        { isVerified: false, isLicenseApproved: false, isActive: false },
+        { new: true }
+      );
+      res.json({ message: 'License rejected and doctor profile deactivated', doctor: updatedDoctor });
+    }
+  } catch (error) {
     res.status(500).json({ message: error.message });
   }
 };

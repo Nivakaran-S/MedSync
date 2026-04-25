@@ -167,6 +167,7 @@ const patientSchema = new mongoose.Schema(
     gender: { type: String, enum: ['Male', 'Female', 'Other'] },
     address: { type: String },
     nationalId: { type: String, trim: true },
+    photoUrl: { type: String },
 
     bloodType: { type: String, enum: ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-', ''] },
     allergies: { type: [allergySchema], default: [] },

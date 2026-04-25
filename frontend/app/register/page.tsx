@@ -13,10 +13,36 @@ export default function RegisterPage() {
         phone: '', dateOfBirth: '', gender: 'Other', address: '',
         name: '', specialty: '', qualifications: '', bio: '', consultationFee: ''
     });
+    const [licenseFile, setLicenseFile] = useState<File | null>(null);
+    const [licensePreview, setLicensePreview] = useState<string | null>(null);
     const [role, setRole] = useState<'patient' | 'doctor'>('patient');
     const [loading, setLoading] = useState(false);
     const { register } = useAuth();
     const router = useRouter();
+
+    const uploadLicenseImage = async (file: File) => {
+        const cloudName = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME;
+        const preset = process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET;
+        if (!cloudName || !preset) {
+            throw new Error('Cloudinary upload is not configured. Please set NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME and NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET.');
+        }
+
+        const form = new FormData();
+        form.append('file', file);
+        form.append('upload_preset', preset);
+
+        const response = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/upload`, {
+            method: 'POST',
+            body: form,
+        });
+
+        if (!response.ok) {
+            throw new Error('Failed to upload license image to Cloudinary.');
+        }
+
+        const data = await response.json();
+        return data.secure_url as string;
+    };
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -24,14 +50,21 @@ export default function RegisterPage() {
         try {
             let submitData: any = {};
             if (role === 'doctor') {
+                if (!licenseFile) {
+                    throw new Error('Please upload a copy of your medical license.');
+                }
+
+                const licenseImageUrl = await uploadLicenseImage(licenseFile);
+
                 submitData = {
                     name: formData.name,
                     specialty: formData.specialty,
-                    qualifications: formData.qualifications.split(','),
+                    qualifications: formData.qualifications.split(',').map((q) => q.trim()).filter(Boolean),
                     bio: formData.bio,
                     consultationFee: Number(formData.consultationFee || 0),
                     contact: { email: formData.email, phone: formData.phone },
-                    password: formData.password
+                    password: formData.password,
+                    licenseImageUrl,
                 };
             } else {
                 submitData = formData;
@@ -204,6 +237,28 @@ export default function RegisterPage() {
                                     <div className="med-input-group">
                                         <label className="med-label">Professional Biography</label>
                                         <textarea name="bio" className="med-input" rows={3} value={formData.bio} onChange={handleChange} placeholder="Brief summary of your clinical expertise and background..." />
+                                    </div>
+                                    <div className="med-input-group">
+                                        <label className="med-label">Medical License Image</label>
+                                        <input
+                                            type="file"
+                                            accept="image/*"
+                                            className="med-input"
+                                            onChange={(e) => {
+                                                const file = e.target.files?.[0] || null;
+                                                setLicenseFile(file);
+                                                setLicensePreview(file ? URL.createObjectURL(file) : null);
+                                            }}
+                                            required
+                                        />
+                                        {licensePreview ? (
+                                            <div style={{ marginTop: '12px' }}>
+                                                <span style={{ display: 'block', marginBottom: '6px', color: 'var(--text-secondary)' }}>Preview</span>
+                                                <img src={licensePreview} alt="License preview" style={{ maxWidth: '100%', maxHeight: '220px', borderRadius: '12px', border: '1px solid var(--card-border)' }} />
+                                            </div>
+                                        ) : (
+                                            <p style={{ marginTop: '12px', color: 'var(--text-secondary)', fontSize: '0.92rem' }}>Upload a scanned copy or photo of your license so admin can verify your credentials.</p>
+                                        )}
                                     </div>
                                 </>
                             )}

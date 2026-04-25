@@ -2,22 +2,11 @@
 
 import React from 'react';
 import Link from 'next/link';
-import { useAuth } from './context/AuthContext';
-import { useRouter } from 'next/navigation';
 import { Stethoscope, Bot, FileText } from 'lucide-react';
 
 export default function LandingPage() {
-  const { user } = useAuth();
-  const router = useRouter();
-
-  // If already logged in, redirect to respective dashboard
-  React.useEffect(() => {
-    if (user) {
-      if (user.role === 'admin') router.push('/admin');
-      else if (user.role === 'doctor') router.push('/doctor');
-      else router.push('/patient');
-    }
-  }, [user, router]);
+  // Home page - NO redirects, NO router usage
+  // This is a pure public page that shows to everyone
 
   return (
     <div className="landing-container">
@@ -147,12 +136,10 @@ export default function LandingPage() {
           Manage your health journey with unparalleled precision and care.
         </p>
 
-        {!user && (
-          <div className="cta-group">
-            <Link href="/login" className="btn btn-primary">Sign In to Dashboard</Link>
-            <Link href="/register" className="btn btn-secondary">Create Account</Link>
-          </div>
-        )}
+        <div className="cta-group">
+          <Link href="/login" className="btn btn-primary">Sign In to Dashboard</Link>
+          <Link href="/register" className="btn btn-secondary">Create Account</Link>
+        </div>
 
         <div className="features-grid">
           <div className="feature-item">
