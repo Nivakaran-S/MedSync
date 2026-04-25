@@ -662,8 +662,14 @@ exports.doctorIssuePrescription = async (req, res) => {
     await sendEvent('patient-events', {
       type: 'PRESCRIPTION_ISSUED',
       patientId: patient._id,
+      patientName: `${patient.firstName} ${patient.lastName}`,
+      patientEmail: patient.email || null,
+      patientPhone: patient.phone || null,
+      doctorName: prescribedBy || 'Doctor',
       prescribedBy,
+      medications: [{ medication, dosage, frequency, duration }],
       medication,
+      instructions,
       verificationId,
       timestamp: new Date(),
     });

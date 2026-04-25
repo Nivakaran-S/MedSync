@@ -470,6 +470,23 @@ exports.getCheck = async (req, res) => {
   }
 };
 
+exports.deleteCheck = async (req, res) => {
+  try {
+    const check = await SymptomCheck.findById(req.params.id);
+    if (!check) return res.status(404).json({ message: 'Not found' });
+
+    const isOwner = check.patientId && String(check.patientId) === String(req.user.patientId);
+    if (req.user.role !== 'admin' && !isOwner) {
+      return res.status(403).json({ message: 'Forbidden' });
+    }
+
+    await SymptomCheck.findByIdAndDelete(req.params.id);
+    res.status(200).json({ message: 'Symptom check deleted', id: req.params.id });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
 exports.getAdminAnalytics = async (req, res) => {
   try {
     if (req.user.role !== 'admin') return res.status(403).json({ message: 'Admin access required' });

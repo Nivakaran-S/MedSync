@@ -21,6 +21,7 @@ router.get('/conversations/patient/:patientId', ctrl.listConversations);
 // ─── History & individual check ───────────────────────────────────────────────
 router.get('/history/:patientId', ctrl.getHistory);
 router.get('/checks/:id', ctrl.getCheck);
+router.delete('/checks/:id', ctrl.deleteCheck);
 
 // ─── Admin analytics ──────────────────────────────────────────────────────────
 router.get('/admin/analytics', ctrl.getAdminAnalytics);
