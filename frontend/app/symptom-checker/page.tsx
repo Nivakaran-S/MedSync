@@ -8,6 +8,7 @@ import { useAuth } from '../context/AuthContext';
 import {
   Stethoscope, Hourglass, Search, Brain, AlertTriangle, FileText, Camera,
   MessageCircle, Send, ImagePlus, Pill, ShieldAlert, UserCheck, X, Trash2,
+  ThumbsUp, ThumbsDown, AlertCircle,
 } from 'lucide-react';
 
 const commonSymptoms = [
@@ -17,6 +18,11 @@ const commonSymptoms = [
   'Blurred vision', 'Anxiety', 'Insomnia', 'Wheezing',
   'Frequent urination', 'Ear pain', 'Numbness',
 ];
+
+interface Disclaimer {
+  type: string;
+  text: string;
+}
 
 interface AnalyzeResult {
   results: Array<{
@@ -28,6 +34,7 @@ interface AnalyzeResult {
   }>;
   overallUrgency: string;
   overallConfidence?: number;
+  confidenceFlag?: 'LOW' | 'OK';
   aiSummary?: string;
   drugInteractionWarnings?: string[];
   allergyWarnings?: string[];
@@ -41,6 +48,10 @@ interface AnalyzeResult {
   contextUsed?: boolean;
   visibleFindings?: string[];
   disclaimer?: string;
+  disclaimers?: Disclaimer[];
+  sourceModel?: string;
+  followUpAt?: string | null;
+  checkId?: string;
 }
 
 interface ChatMessage { role: 'user' | 'assistant' | 'system'; content: string }
@@ -590,6 +601,21 @@ function ResultPanel({ result }: { result: AnalyzeResult }) {
           </div>
         )}
 
+        {result.confidenceFlag === 'LOW' && (
+          <div style={{
+            padding: '12px 14px', borderRadius: 'var(--radius-md)',
+            background: '#fef3c7', color: '#92400e', border: '1px solid #fcd34d',
+            display: 'flex', alignItems: 'flex-start', gap: '10px', marginBottom: '12px',
+          }}>
+            <AlertTriangle size={18} style={{ flexShrink: 0, marginTop: 2 }} />
+            <div style={{ fontSize: '0.88rem', lineHeight: 1.5 }}>
+              <strong>Low confidence ({Math.round((result.overallConfidence ?? 0) * 100)}%).</strong>{' '}
+              The AI isn&apos;t sure about this triage. Urgency has been escalated as a precaution —
+              please verify with a clinician before acting on these recommendations.
+            </div>
+          </div>
+        )}
+
         {result.aiSummary && (
           <div style={{ padding: '14px', background: 'rgba(15, 82, 186, 0.06)', borderRadius: 'var(--radius-md)', borderLeft: '4px solid var(--primary)' }}>
             <p style={{ fontSize: '0.95rem', lineHeight: 1.6, margin: 0 }}>
@@ -707,11 +733,103 @@ function ResultPanel({ result }: { result: AnalyzeResult }) {
         </div>
       )}
 
-      {result.disclaimer && (
+      {(result.disclaimers && result.disclaimers.length > 0) ? (
+        <details style={{
+          marginTop: '20px', padding: '12px 14px',
+          background: '#fffbeb', borderRadius: 'var(--radius-sm)', border: '1px solid #fde68a',
+        }}>
+          <summary style={{ cursor: 'pointer', fontWeight: 600, color: '#92400e', fontSize: '0.9rem' }}>
+            Important information ({result.disclaimers.length})
+          </summary>
+          <ul style={{ margin: '10px 0 0', paddingLeft: '20px' }}>
+            {result.disclaimers.map((d, i) => (
+              <li key={i} style={{ fontSize: '0.85rem', color: '#78350f', lineHeight: 1.55, marginBottom: '6px' }}>
+                {d.text}
+              </li>
+            ))}
+          </ul>
+          {result.followUpAt && (
+            <p style={{ marginTop: '10px', fontSize: '0.82rem', color: '#78350f' }}>
+              We&apos;ll send you a follow-up reminder on{' '}
+              <strong>{new Date(result.followUpAt).toLocaleString()}</strong>.
+            </p>
+          )}
+        </details>
+      ) : result.disclaimer ? (
         <div style={{ marginTop: '20px', padding: '12px 14px', background: '#fffbeb', borderRadius: 'var(--radius-sm)', border: '1px solid #fde68a' }}>
           <p style={{ fontSize: '0.85rem', color: '#92400e', fontStyle: 'italic', margin: 0 }}>{result.disclaimer}</p>
         </div>
-      )}
+      ) : null}
+
+      {result.checkId && <FeedbackWidget checkId={result.checkId} />}
     </Card>
+  );
+}
+
+// A4: inline feedback widget — three quick options, no modal.
+function FeedbackWidget({ checkId }: { checkId: string }) {
+  const [submitted, setSubmitted] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState<string | null>(null);
+
+  const submit = async (type: 'correct' | 'false-positive' | 'false-negative') => {
+    setSubmitting(type);
+    try {
+      await symptomApi.submitFeedback(checkId, { type });
+      setSubmitted(type);
+      showToast('Thanks — your feedback helps us improve.', 'success');
+    } catch (err: unknown) {
+      showToast(err instanceof Error ? err.message : 'Failed to submit feedback', 'error');
+    } finally {
+      setSubmitting(null);
+    }
+  };
+
+  if (submitted) {
+    return (
+      <div style={{
+        marginTop: '14px', padding: '10px 12px',
+        background: '#ecfdf5', border: '1px solid #a7f3d0', borderRadius: 'var(--radius-sm)',
+        fontSize: '0.85rem', color: '#065f46',
+      }}>
+        Thanks for your feedback!
+      </div>
+    );
+  }
+
+  return (
+    <div style={{
+      marginTop: '16px', padding: '12px 14px',
+      background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 'var(--radius-sm)',
+    }}>
+      <div style={{ fontSize: '0.85rem', fontWeight: 600, marginBottom: '8px', color: 'var(--text-secondary)' }}>
+        Was this analysis useful?
+      </div>
+      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+        <button
+          onClick={() => submit('correct')}
+          disabled={submitting !== null}
+          className="med-button secondary sm"
+          style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}
+        >
+          <ThumbsUp size={14} /> Looks right
+        </button>
+        <button
+          onClick={() => submit('false-positive')}
+          disabled={submitting !== null}
+          className="med-button secondary sm"
+          style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}
+        >
+          <ThumbsDown size={14} /> Over-reacted
+        </button>
+        <button
+          onClick={() => submit('false-negative')}
+          disabled={submitting !== null}
+          className="med-button secondary sm"
+          style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}
+        >
+          <AlertCircle size={14} /> Missed something serious
+        </button>
+      </div>
+    </div>
   );
 }

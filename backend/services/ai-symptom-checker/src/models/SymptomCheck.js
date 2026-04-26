@@ -44,6 +44,8 @@ const symptomCheckSchema = new mongoose.Schema(
 
     imageAnalyzed: { type: Boolean, default: false },
     sourceModel: { type: String, default: 'gemini-1.5-pro' },
+    confidenceFlag: { type: String, enum: ['LOW', 'OK'], default: 'OK' },
+    followUpAt: { type: Date, default: null },
     timestamp: { type: Date, default: Date.now, index: true },
   },
   { timestamps: true }

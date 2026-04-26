@@ -97,6 +97,9 @@ services:
     environment:
       - MONGO_URI=${MONGO_BASE}/patient_db
       - PORT=3001
+      - CLOUDINARY_CLOUD_NAME=${CLOUDINARY_CLOUD_NAME}
+      - CLOUDINARY_API_KEY=${CLOUDINARY_API_KEY}
+      - CLOUDINARY_API_SECRET=${CLOUDINARY_API_SECRET}
     dns:
       - 8.8.8.8
       - 8.8.4.4
@@ -112,6 +115,9 @@ services:
     environment:
       - MONGO_URI=${MONGO_BASE}/doctor_db
       - PORT=3002
+      - CLOUDINARY_CLOUD_NAME=${CLOUDINARY_CLOUD_NAME}
+      - CLOUDINARY_API_KEY=${CLOUDINARY_API_KEY}
+      - CLOUDINARY_API_SECRET=${CLOUDINARY_API_SECRET}
     dns:
       - 8.8.8.8
       - 8.8.4.4

@@ -62,6 +62,10 @@ router.delete('/documents/:id', authMiddleware, ctrl.deleteDocument);
 router.get('/health-score', authMiddleware, ctrl.getHealthScore);
 router.get('/summary', authMiddleware, ctrl.getMedicalSummary);
 
+// ─── A5/A6: Self-service privacy/portability ──────────────────────────────────
+router.get('/audit-log', authMiddleware, ctrl.getMyAuditLog);
+router.get('/data-export', authMiddleware, ctrl.exportMyData);
+
 // ─── Admin: list all patients ────────────────────────────────────────────────
 router.get('/', authMiddleware, ctrl.listPatients);
 

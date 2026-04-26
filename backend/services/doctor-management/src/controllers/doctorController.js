@@ -8,9 +8,12 @@ const qrcode = require('qrcode');
 const crypto = require('crypto');
 const { sendEvent } = require('../utils/kafka');
 const { uploadImage } = require('../utils/cloudinary');
+const { checkAllergies } = require('../utils/allergyChecker');
 
 const APPOINTMENT_SERVICE_URL =
   process.env.APPOINTMENT_SERVICE_URL || 'http://localhost:3003';
+const PATIENT_SERVICE_URL =
+  process.env.PATIENT_SERVICE_URL || 'http://localhost:3001';
 
 if (!process.env.JWT_SECRET) {
   throw new Error('FATAL: JWT_SECRET is not set');
@@ -561,7 +564,11 @@ exports.deleteAvailability = async (req, res) => {
 // ── Prescriptions (QR-signed, verifiable) ─────────────────────────────────────
 exports.issuePrescription = async (req, res) => {
   try {
-    const { patientId, patientName, patientEmail, patientPhone, doctorName, appointmentId, medications, instructions, signatureBase64 } = req.body;
+    const {
+      patientId, patientName, patientEmail, patientPhone, doctorName, appointmentId,
+      medications, instructions, signatureBase64,
+      acknowledgedAllergyOverride,
+    } = req.body;
 
     if (req.user && req.user.role !== 'doctor' && req.user.role !== 'admin') {
       return res.status(403).json({ message: 'Only doctors can issue prescriptions.' });
@@ -571,7 +578,45 @@ exports.issuePrescription = async (req, res) => {
       return res.status(400).json({ message: 'A digital signature is required to issue a prescription.' });
     }
 
+    // ── A7: Allergy check ──────────────────────────────────────────────────
+    // Fetch patient allergies via the provider-scoped read endpoint
+    // (`/api/patients/:patientId/full`). The patient service authorises the
+    // doctor via the same Bearer token already on this request.
+    let allergyWarnings = [];
+    if (patientId) {
+      try {
+        const { data: patientFull } = await axios.get(
+          `${PATIENT_SERVICE_URL}/api/patients/${patientId}/full`,
+          {
+            headers: { Authorization: req.headers.authorization },
+            timeout: 4000,
+          }
+        );
+        const allergies = patientFull?.profile?.allergies || [];
+        const meds = Array.isArray(medications) ? medications : [];
+        for (const m of meds) {
+          const medName = m?.medication || m?.name || (typeof m === 'string' ? m : '');
+          if (!medName) continue;
+          const { warnings } = checkAllergies(medName, allergies);
+          allergyWarnings.push(...warnings.map((w) => ({ ...w, medicationName: medName })));
+        }
+      } catch (err) {
+        console.warn('[Doctor Service] Allergy precheck failed (continuing):', err.message);
+      }
+    }
+
+    if (allergyWarnings.length > 0 && !acknowledgedAllergyOverride) {
+      return res.status(409).json({
+        code: 'ALLERGY_CONFLICT',
+        message: 'Allergy conflict detected. Re-submit with acknowledgedAllergyOverride: true to proceed.',
+        warnings: allergyWarnings,
+      });
+    }
+
     const verificationId = crypto.randomBytes(6).toString('hex').toUpperCase();
+    const overrideNote = allergyWarnings.length > 0
+      ? ` [WARNING: prescribed despite ${allergyWarnings.map((w) => w.allergen).join(', ')} allergy by Dr. ${doctorName}]`
+      : '';
 
     const prescription = new Prescription({
       patientId,
@@ -580,7 +625,7 @@ exports.issuePrescription = async (req, res) => {
       doctorName,
       appointmentId,
       medications,
-      instructions,
+      instructions: (instructions || '') + overrideNote,
       verificationId,
       signatureBase64,
     });
@@ -679,7 +724,12 @@ exports.listPendingLicenses = async (req, res) => {
     if (req.user?.role !== 'admin') {
       return res.status(403).json({ message: 'Admin access required.' });
     }
-    const doctors = await Doctor.find({ isVerified: false, licenseImageUrl: { $ne: null, $ne: '' } });
+    // NB: a single object literal cannot have two `$ne` keys (only the last
+    // wins), so use $nin to exclude both null and empty-string license URLs.
+    const doctors = await Doctor.find({
+      isVerified: false,
+      licenseImageUrl: { $exists: true, $nin: [null, ''] },
+    });
     res.json(doctors);
   } catch (error) {
     res.status(500).json({ message: error.message });

@@ -298,6 +298,57 @@ exports.getAuditLog = async (req, res) => {
   }
 };
 
+// A5: Patient-facing audit log — caller sees their OWN access history.
+// Hides internal/system actions and IP addresses to keep the view friendly.
+exports.getMyAuditLog = async (req, res) => {
+  try {
+    const patient = await Patient.findById(req.user.patientId).select('+auditLog');
+    if (!patient) return res.status(404).json({ message: 'Patient not found.' });
+    const entries = (patient.auditLog || [])
+      .filter((e) => e.accessedByRole !== 'system')
+      .slice(-200)
+      .reverse()
+      .map((e) => ({
+        timestamp: e.timestamp,
+        accessedByRole: e.accessedByRole,
+        action: e.action,
+        resource: e.resource || null,
+        // Intentionally omit accessedBy id and ipAddress for the patient-facing view.
+      }));
+    res.status(200).json(entries);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// A6: GDPR-style data export — JSON snapshot of the patient's full record.
+// Sync for v1 (Patient is one document; Prescription is one query). PDF deferred.
+exports.exportMyData = async (req, res) => {
+  try {
+    const patient = await Patient.findById(req.user.patientId).select('-password');
+    if (!patient) return res.status(404).json({ message: 'Patient not found.' });
+    const prescriptions = await Prescription.find({ patientId: patient._id });
+
+    audit(req, patient._id, 'DATA_EXPORT', 'full-record');
+
+    const payload = {
+      exportedAt: new Date(),
+      exportFormat: 'json',
+      patient: patient.toObject(),
+      prescriptions,
+    };
+
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename=medsync-export-${patient._id}-${Date.now()}.json`
+    );
+    res.status(200).send(JSON.stringify(payload, null, 2));
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
 // ─── Self-service profile ─────────────────────────────────────────────────────
 
 exports.getProfile = async (req, res) => {
@@ -648,7 +699,7 @@ exports.doctorIssuePrescription = async (req, res) => {
       patientName: `${patient.firstName} ${patient.lastName}`,
       doctorId: req.user.doctorId || req.user.id,
       doctorName: prescribedBy || 'Doctor',
-      appointmentId: 'manual', 
+      appointmentId: 'manual',
       medications: [{ medication, dosage, frequency, duration }],
       instructions,
       verificationId,

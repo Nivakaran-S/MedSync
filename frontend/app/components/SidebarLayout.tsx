@@ -9,7 +9,7 @@ import { useAuth } from '../context/AuthContext';
 import {
   UserCog, Stethoscope, Clock, Calendar, Home,
   Search, CalendarClock, User, FileText, Bot, Video, LayoutDashboard,
-  Users, LineChart, CreditCard, LogOut, HeartPulse, Brain, Bell,
+  Users, LineChart, CreditCard, LogOut, HeartPulse, Brain, Bell, ShieldCheck, Shield,
 } from 'lucide-react';
 
 const getNavItems = (role?: string) => {
@@ -17,6 +17,7 @@ const getNavItems = (role?: string) => {
     return [
       { href: '/admin', label: 'Admin Dashboard', icon: <LayoutDashboard size={20} /> },
       { href: '/admin/doctors', label: 'Manage Doctors', icon: <UserCog size={20} /> },
+      { href: '/admin/license-management', label: 'Pending Licenses', icon: <ShieldCheck size={20} /> },
       { href: '/admin/patients', label: 'Manage Patients', icon: <Users size={20} /> },
       { href: '/admin/appointments', label: 'All Appointments', icon: <Calendar size={20} /> },
       { href: '/admin/payments', label: 'System Payments', icon: <CreditCard size={20} /> },
@@ -46,6 +47,7 @@ const getNavItems = (role?: string) => {
     { href: '/symptom-checker', label: 'AI Symptom Checker', icon: <Bot size={20} /> },
     { href: '/payment', label: 'Billing & Payments', icon: <CreditCard size={20} /> },
     { href: '/notifications', label: 'Notifications', icon: <Bell size={20} /> },
+    { href: '/patient/privacy', label: 'Privacy & Activity', icon: <Shield size={20} /> },
   ];
 };
 

@@ -44,6 +44,21 @@ spec:
               key: JWT_EXPIRE
         - name: FRONTEND_URL
           value: "http://medsync.local"
+        - name: CLOUDINARY_CLOUD_NAME
+          valueFrom:
+            secretKeyRef:
+              name: medsync-secrets
+              key: CLOUDINARY_CLOUD_NAME
+        - name: CLOUDINARY_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: medsync-secrets
+              key: CLOUDINARY_API_KEY
+        - name: CLOUDINARY_API_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: medsync-secrets
+              key: CLOUDINARY_API_SECRET
         resources:
           requests:
             memory: "256Mi"

@@ -22,6 +22,7 @@ router.get('/conversations/patient/:patientId', ctrl.listConversations);
 router.get('/history/:patientId', ctrl.getHistory);
 router.get('/checks/:id', ctrl.getCheck);
 router.delete('/checks/:id', ctrl.deleteCheck);
+router.post('/checks/:id/feedback', ctrl.submitFeedback);
 
 // ─── Admin analytics ──────────────────────────────────────────────────────────
 router.get('/admin/analytics', ctrl.getAdminAnalytics);

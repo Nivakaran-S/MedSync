@@ -74,9 +74,11 @@ export default function AdminManageDoctors() {
   };
 
   const handleVerify = async (id: string, isVerified: boolean) => {
+    // Use the dedicated license-status endpoint so isVerified, isLicenseApproved
+    // and isActive stay in sync (the same update the license-management page makes).
     setActionLoading(id + '-verify');
     try {
-      await doctorApi.updateDoctor(id, { isVerified });
+      await doctorApi.updateLicenseStatus(id, isVerified);
       loadDoctors();
     } catch {
       alert('Failed to update doctor verification status');

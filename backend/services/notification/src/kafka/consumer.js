@@ -19,6 +19,7 @@ const connectConsumer = async () => {
     await consumer.subscribe({ topic: 'payment-events', fromBeginning: true });
     await consumer.subscribe({ topic: 'patient-events', fromBeginning: true });
     await consumer.subscribe({ topic: 'doctor-events', fromBeginning: true });
+    await consumer.subscribe({ topic: 'symptom-events', fromBeginning: true });
 
     await consumer.run({
       eachMessage: async ({ topic, partition, message }) => {
@@ -54,6 +55,9 @@ const connectConsumer = async () => {
               break;
             case 'DOCTOR_REGISTERED':
               await handleDoctorRegistered(data);
+              break;
+            case 'EMERGENCY_TRIAGE_ALERT':
+              await handleEmergencyTriageAlert(data);
               break;
             default:
               console.log(`[Notification Service] No handler for event type: ${payload.type}`);
@@ -230,6 +234,71 @@ const handleDoctorRegistered = async (data) => {
       message: text,
       category: 'account'
     });
+  }
+};
+
+// A1: Emergency triage — page the patient AND their emergency contact.
+const handleEmergencyTriageAlert = async (data) => {
+  const {
+    checkId,
+    patientId,
+    patientName,
+    patientEmail,
+    patientPhone,
+    emergencyContact,
+    symptoms,
+    summary,
+  } = data || {};
+
+  const subject = '🚨 URGENT: MedSync detected possible medical emergency';
+  const greeting = patientName ? `Hello ${patientName},` : 'Hello,';
+  const text = [
+    greeting,
+    '',
+    'MedSync\'s AI triage flagged your recent symptom check as a possible medical emergency.',
+    '',
+    'CALL EMERGENCY SERVICES IMMEDIATELY (1990 in Sri Lanka, 911 in US, 999 in UK).',
+    '',
+    summary ? `AI summary: ${summary}` : '',
+    symptoms ? `Reported symptoms: ${symptoms}` : '',
+    '',
+    'This is an automated alert. Please do not delay care while waiting for human review.',
+  ].filter(Boolean).join('\n');
+
+  // Notify the patient (in-app + email).
+  await notify({
+    email: patientEmail,
+    phone: patientPhone, // SMS only fires if Twilio is wired; safe no-op otherwise.
+    subject,
+    text,
+    userId: patientId,
+    category: 'system',
+    metadata: { checkId, severity: 'emergency' },
+  });
+
+  // Notify the emergency contact, if one is on file.
+  if (emergencyContact && (emergencyContact.email || emergencyContact.phone)) {
+    const contactSubject = `🚨 Medical emergency alert for ${patientName || 'a MedSync patient you are listed as emergency contact for'}`;
+    const contactText = [
+      `Hello${emergencyContact.name ? ` ${emergencyContact.name}` : ''},`,
+      '',
+      `${patientName || 'A patient who has listed you as their emergency contact'} has just received an emergency triage alert from MedSync's AI symptom checker.`,
+      summary ? `AI summary: ${summary}` : '',
+      '',
+      'Please reach out to them immediately. If you believe they are in danger, call your local emergency number.',
+      '',
+      'This is an automated alert sent on the patient\'s behalf.',
+    ].filter(Boolean).join('\n');
+    if (emergencyContact.email) {
+      await emailService.sendEmail(emergencyContact.email, contactSubject, contactText).catch(e =>
+        console.error('[Notification] Emergency contact email failed:', e.message)
+      );
+    }
+    if (emergencyContact.phone) {
+      await smsService.sendSMS(emergencyContact.phone, contactText).catch(e =>
+        console.error('[Notification] Emergency contact SMS failed:', e.message)
+      );
+    }
   }
 };
 

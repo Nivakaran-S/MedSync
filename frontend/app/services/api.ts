@@ -265,6 +265,31 @@ export const patientApi = {
     return parseOrThrow(response, 'Failed to delete prescription');
   },
 
+  // ── Privacy / portability (A5, A6) ──
+  getMyAuditLog: async () => {
+    const response = await fetch(`${PATIENT_SERVICE_URL}/audit-log`, { headers: getAuthHeaders() });
+    return parseOrThrow(response, 'Failed to fetch audit log');
+  },
+  exportMyData: async () => {
+    const response = await fetch(`${PATIENT_SERVICE_URL}/data-export`, { headers: getAuthHeaders() });
+    if (!response.ok) {
+      let message = 'Failed to export data';
+      try { const e = await response.json(); if (e?.message) message = e.message; } catch { /* ignore */ }
+      throw new Error(message);
+    }
+    const blob = await response.blob();
+    const filename = (response.headers.get('content-disposition') || '')
+      .split('filename=')[1]?.replace(/"/g, '') || `medsync-export-${Date.now()}.json`;
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.URL.revokeObjectURL(url);
+  },
+
   // ── Derived analytics ──
   getHealthScore: async (patientId?: string) => {
     const url = patientId
@@ -391,6 +416,17 @@ export const doctorApi = {
     const response = await fetch(`${DOCTOR_SERVICE_URL}/prescriptions`, {
       method: 'POST', headers: getAuthHeaders(), body: JSON.stringify(data),
     });
+    // A7: surface structured 409 (ALLERGY_CONFLICT) so callers can render
+    // an override modal instead of just an opaque toast.
+    if (response.status === 409) {
+      const body = await response.json().catch(() => ({}));
+      const err = new Error(body?.message || 'Allergy conflict') as Error & {
+        code?: string; warnings?: Array<Record<string, unknown>>;
+      };
+      err.code = body?.code;
+      err.warnings = body?.warnings;
+      throw err;
+    }
     return parseOrThrow(response, 'Failed to issue prescription');
   },
   verifyPrescription: async (verificationId: string) => {
@@ -497,6 +533,13 @@ export const symptomApi = {
       method: 'DELETE', headers: getAuthHeaders(),
     });
     return parseOrThrow(response, 'Failed to delete check');
+  },
+
+  submitFeedback: async (id: string, data: { type: 'false-positive' | 'false-negative' | 'correct'; comment?: string }) => {
+    const response = await fetch(`${SYMPTOM_CHECKER_URL}/checks/${id}/feedback`, {
+      method: 'POST', headers: getAuthHeaders(), body: JSON.stringify(data),
+    });
+    return parseOrThrow(response, 'Failed to submit feedback');
   },
 };
 
