@@ -167,6 +167,10 @@ const handleAppointmentCompleted = async (data) => {
 
 const handlePaymentSuccessful = async (data) => {
   const { patientId, patientEmail, patientPhone, amount, currency, appointmentId } = data;
+  console.log(`[Notification] PAYMENT_SUCCESSFUL received: appointmentId=${appointmentId}, patientId=${patientId}, email=${patientEmail || '<missing>'}, phone=${patientPhone || '<missing>'}`);
+  if (!patientEmail) {
+    console.warn(`[Notification] No patientEmail in PAYMENT_SUCCESSFUL — email skipped. Check that the payment service set session.metadata.patientEmail at checkout (req.user.email must exist).`);
+  }
   const subject = `Payment Successful — MedSync`;
   const text = `We have successfully received your payment of ${String(currency || 'LKR').toUpperCase()} ${Number(amount || 0).toLocaleString()} for appointment ${appointmentId}. Your booking is now confirmed.`;
   await notify({

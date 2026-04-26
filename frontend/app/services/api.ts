@@ -749,7 +749,7 @@ export const telemedicineApi = {
 };
 
 export const paymentApi = {
-  createCheckoutSession: async (data: { appointmentId: string; patientId: string; doctorId: string; doctorName: string; patientPhone?: string | null; amount: number }) => {
+  createCheckoutSession: async (data: { appointmentId: string; patientId: string; doctorId: string; doctorName: string; patientEmail?: string | null; patientPhone?: string | null; amount: number }) => {
     const response = await fetch(`${PAYMENT_SERVICE_URL}/checkout`, {
       method: 'POST', headers: getAuthHeaders(), body: JSON.stringify(data),
     });

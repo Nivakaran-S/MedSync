@@ -6,6 +6,9 @@ const paymentSchema = new mongoose.Schema(
         patientId: { type: String, required: true, index: true },
         doctorId: { type: String, required: true },
         doctorName: { type: String },
+        // Captured at checkout-creation time so the webhook can guarantee an
+        // address even if Stripe doesn't surface customer_details.email.
+        patientEmail: { type: String },
         patientPhone: { type: String },
         amount: { type: Number, required: true }, // in smallest currency unit (e.g. paise/cents)
         currency: { type: String, default: 'lkr' },

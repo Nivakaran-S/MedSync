@@ -86,7 +86,11 @@ const sendReceiptEmailForPayment = async ({ payment, to }) => {
 // ── POST /api/payments/checkout ───────────────────────────────────────────
 exports.createCheckoutSession = async (req, res, next) => {
     try {
-        const { appointmentId, patientId, doctorId, doctorName, patientPhone, amount, currency = 'lkr' } = req.body;
+        const {
+            appointmentId, patientId, doctorId, doctorName,
+            patientEmail: bodyPatientEmail, patientPhone,
+            amount, currency = 'lkr',
+        } = req.body;
 
         if (!appointmentId || !patientId || !amount) {
             return res.status(400).json({ message: 'appointmentId, patientId, and amount are required' });
@@ -101,11 +105,21 @@ exports.createCheckoutSession = async (req, res, next) => {
             return res.status(409).json({ message: 'This appointment is already paid.' });
         }
 
+        // Resolve patient email — body wins (frontend sends user.email), then JWT.
+        // Persisted on the Payment row so the webhook always has it later.
+        const patientEmail = bodyPatientEmail || req.user?.email || '';
+        if (!patientEmail) {
+            console.warn(`[payment] createCheckoutSession: no patientEmail resolved for ${patientId} — payment confirmation email may not send`);
+        }
+
         const amountInSmallestUnit = Math.round(Number(amount) * 100);
 
         const session = await stripe.checkout.sessions.create({
             payment_method_types: ['card'],
             mode: 'payment',
+            // Pre-fill the email in Stripe Checkout so customer_details.email is
+            // populated when the webhook fires.
+            ...(patientEmail ? { customer_email: patientEmail } : {}),
             line_items: [
                 {
                     price_data: {
@@ -123,7 +137,7 @@ exports.createCheckoutSession = async (req, res, next) => {
                 appointmentId,
                 patientId,
                 doctorId: doctorId || '',
-                patientEmail: req.user?.email || '',
+                patientEmail,
                 patientPhone: patientPhone || '',
             },
             success_url: `${FRONTEND_URL}/payment/success?session_id={CHECKOUT_SESSION_ID}`,
@@ -139,6 +153,7 @@ exports.createCheckoutSession = async (req, res, next) => {
                 doctorName,
                 amount,
                 currency,
+                patientEmail,
                 patientPhone: patientPhone || '',
                 stripeSessionId: session.id,
                 status: 'pending',
@@ -215,11 +230,16 @@ exports.handleWebhook = async (req, res, _next) => {
                 }
             );
 
+            // Resolve recipient — try every source, in order. The persisted
+            // payment.patientEmail (set at checkout creation) is the most
+            // reliable since it doesn't depend on Stripe re-surfacing it.
             const recipientEmail =
                 session?.customer_details?.email ||
                 session?.metadata?.patientEmail ||
+                payment?.patientEmail ||
                 payment?.lastReceiptEmail ||
                 null;
+            console.log(`[Webhook] Resolved recipient email for ${appointmentId}: ${recipientEmail || '<none>'} (sources tried: customer_details=${!!session?.customer_details?.email}, metadata=${!!session?.metadata?.patientEmail}, payment.patientEmail=${!!payment?.patientEmail}, lastReceiptEmail=${!!payment?.lastReceiptEmail})`);
 
             if (recipientEmail) {
                 const sent = await sendReceiptEmailForPayment({ payment, to: recipientEmail });
@@ -227,7 +247,12 @@ exports.handleWebhook = async (req, res, _next) => {
                     payment.receiptSentAt = new Date();
                     payment.lastReceiptEmail = recipientEmail;
                     await payment.save();
+                    console.log(`[Webhook] Receipt email dispatched to ${recipientEmail}`);
+                } else {
+                    console.warn(`[Webhook] Receipt email send returned false for ${recipientEmail} — check notification service logs`);
                 }
+            } else {
+                console.warn(`[Webhook] No recipient email — receipt email skipped for appointment ${appointmentId}`);
             }
 
             await sendEvent('payment-events', {

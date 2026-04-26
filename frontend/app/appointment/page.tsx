@@ -66,6 +66,9 @@ export default function AppointmentListPage() {
                 patientId,
                 doctorId: appt.doctorId,
                 doctorName: appt.doctorName,
+                // Pass through email so the webhook can dispatch the
+                // confirmation email even if Stripe doesn't surface it.
+                patientEmail: appt.patientEmail || user?.email || null,
                 patientPhone: appt.patientPhone,
                 amount: fee,
             });

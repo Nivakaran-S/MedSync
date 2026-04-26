@@ -12,16 +12,21 @@ const transporter = nodemailer.createTransport({
 });
 
 const sendEmail = async (to, subject, text) => {
+  if (!to) {
+    console.warn('[EmailService] sendEmail called with empty `to` — skipping');
+    return false;
+  }
+  // Gmail rewrites the From header to the auth user anyway; honour EMAIL_FROM
+  // when set so other providers display a friendly From.
+  const from = process.env.EMAIL_FROM
+    || (process.env.EMAIL_USER ? `"MedSync Notifications" <${process.env.EMAIL_USER}>` : '"MedSync Notifications" <no-reply@medsync.com>');
   try {
-    const info = await transporter.sendMail({
-      from: '"MedSync Notifications" <no-reply@medsync.com>',
-      to,
-      subject,
-      text,
-    });
-    console.log(`[EmailService] Sent email to ${to}: ${info.messageId}`);
+    const info = await transporter.sendMail({ from, to, subject, text });
+    console.log(`[EmailService] ✓ Sent email to ${to} (subject: "${subject}") messageId=${info.messageId}`);
+    return true;
   } catch (error) {
-    console.error(`[EmailService] Error sending email to ${to}:`, error.message);
+    console.error(`[EmailService] ✗ Send failed to ${to} (subject: "${subject}"): ${error.message}`);
+    return false;
   }
 };
 
