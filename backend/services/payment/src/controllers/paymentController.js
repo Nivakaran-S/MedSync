@@ -7,6 +7,7 @@ const {
     signReceiptHash,
     buildReceiptData,
     generateReceiptPdfBuffer,
+    generateRevenueReportPdfBuffer,
 } = require('../utils/receipt');
 const { sendReceiptEmail } = require('../utils/notificationClient');
 
@@ -81,6 +82,78 @@ const sendReceiptEmailForPayment = async ({ payment, to }) => {
     ].join('\n');
 
     return sendReceiptEmail({ to, subject, text });
+};
+
+const finalizePaidSession = async (session) => {
+    const { appointmentId, patientId } = session.metadata || {};
+
+    const existing = await Payment.findOne({ stripeSessionId: session.id });
+    if (!existing) {
+        console.warn('[Payment] payment not found for session:', session.id);
+        return { warning: 'payment record not found' };
+    }
+
+    const receiptNumber = existing.receiptNumber || generateReceiptNumber();
+    const receiptHash = existing.receiptHash || signReceiptHash({
+        appointmentId: existing.appointmentId,
+        paymentId: String(existing._id),
+        amount: existing.amount,
+        currency: existing.currency,
+        paidAt: new Date().toISOString(),
+        receiptNumber,
+    });
+    const auditInsights = calculateAuditInsights({ amount: existing.amount, currency: existing.currency, session });
+
+    const payment = await Payment.findOneAndUpdate(
+        { stripeSessionId: session.id },
+        {
+            status: 'paid',
+            stripePaymentIntentId: session.payment_intent,
+            receiptNumber,
+            receiptHash,
+            auditInsights,
+            metadata: session,
+        },
+        { new: true }
+    );
+
+    await axios.put(`${APPOINTMENT_SERVICE_URL}/api/appointments/${appointmentId}/payment`, {
+        paymentStatus: 'paid',
+        paymentId: payment?._id?.toString() || session.payment_intent,
+    });
+
+    const recipientEmail =
+        session?.customer_details?.email ||
+        session?.metadata?.patientEmail ||
+        payment?.lastReceiptEmail ||
+        null;
+
+    if (recipientEmail) {
+        const sent = await sendReceiptEmailForPayment({ payment, to: recipientEmail });
+        if (sent) {
+            payment.receiptSentAt = new Date();
+            payment.lastReceiptEmail = recipientEmail;
+            await payment.save();
+        }
+    }
+
+    await sendEvent('payment-events', {
+        type: 'PAYMENT_SUCCESSFUL',
+        data: {
+            appointmentId,
+            patientId,
+            amount: payment.amount,
+            currency: payment.currency,
+            patientPhone: session?.metadata?.patientPhone || payment?.metadata?.customer_details?.phone || null,
+            patientEmail: recipientEmail,
+            receiptNumber: payment.receiptNumber,
+            receiptHash: payment.receiptHash,
+            riskScore: payment.auditInsights?.riskScore || 0,
+            riskLevel: payment.auditInsights?.riskLevel || 'low',
+        },
+    });
+
+    return { payment };
 };
 
 // ── POST /api/payments/checkout ───────────────────────────────────────────
@@ -166,82 +239,54 @@ exports.handleWebhook = async (req, res, _next) => {
 
     if (event.type === 'checkout.session.completed') {
         const session = event.data.object;
-        const { appointmentId, patientId } = session.metadata || {};
-
         try {
-            const existing = await Payment.findOne({ stripeSessionId: session.id });
-            if (!existing) {
-                console.warn('[Webhook] payment not found for session:', session.id);
-                return res.status(200).json({ received: true, warning: 'payment record not found' });
+            const { payment, warning } = await finalizePaidSession(session);
+            if (warning) {
+                return res.status(200).json({ received: true, warning });
             }
-
-            const receiptNumber = existing.receiptNumber || generateReceiptNumber();
-            const receiptHash = existing.receiptHash || signReceiptHash({
-                appointmentId: existing.appointmentId,
-                paymentId: String(existing._id),
-                amount: existing.amount,
-                currency: existing.currency,
-                paidAt: new Date().toISOString(),
-                receiptNumber,
-            });
-            const auditInsights = calculateAuditInsights({ amount: existing.amount, currency: existing.currency, session });
-
-            const payment = await Payment.findOneAndUpdate(
-                { stripeSessionId: session.id },
-                {
-                    status: 'paid',
-                    stripePaymentIntentId: session.payment_intent,
-                    receiptNumber,
-                    receiptHash,
-                    auditInsights,
-                    metadata: session,
-                },
-                { new: true }
-            );
-
-            await axios.put(`${APPOINTMENT_SERVICE_URL}/api/appointments/${appointmentId}/payment`, {
-                paymentStatus: 'paid',
-                paymentId: payment?._id?.toString() || session.payment_intent,
-            });
-
-            const recipientEmail =
-                session?.customer_details?.email ||
-                session?.metadata?.patientEmail ||
-                payment?.lastReceiptEmail ||
-                null;
-
-            if (recipientEmail) {
-                const sent = await sendReceiptEmailForPayment({ payment, to: recipientEmail });
-                if (sent) {
-                    payment.receiptSentAt = new Date();
-                    payment.lastReceiptEmail = recipientEmail;
-                    await payment.save();
-                }
-            }
-
-            await sendEvent('payment-events', {
-                type: 'PAYMENT_SUCCESSFUL',
-                data: {
-                    appointmentId,
-                    patientId,
-                    amount: payment.amount,
-                    currency: payment.currency,
-                    patientPhone: session?.metadata?.patientPhone || payment?.metadata?.customer_details?.phone || null,
-                    patientEmail: recipientEmail,
-                    receiptNumber: payment.receiptNumber,
-                    receiptHash: payment.receiptHash,
-                    riskScore: payment.auditInsights?.riskScore || 0,
-                    riskLevel: payment.auditInsights?.riskLevel || 'low',
-                },
-            });
-
-            console.log(`[Webhook] Payment confirmed for appointment ${appointmentId}`);
+            console.log(`[Webhook] Payment confirmed for appointment ${payment.appointmentId}`);
         } catch (err) {
             console.error(`[Webhook] Post-payment update failed: ${err.message}`);
         }
     }
 
     return res.status(200).json({ received: true });
+};
+
+// ── POST /api/payments/confirm-session ───────────────────────────────────
+exports.confirmCheckoutSession = async (req, res, next) => {
+    try {
+        const { sessionId } = req.body || {};
+        if (!sessionId) {
+            return res.status(400).json({ message: 'sessionId is required.' });
+        }
+
+        const existing = await Payment.findOne({ stripeSessionId: sessionId });
+        if (!existing) {
+            return res.status(404).json({ message: 'Payment session not found.' });
+        }
+
+        if (!canAccessPayment(req.user, existing)) {
+            return res.status(403).json({ message: 'Forbidden: You cannot confirm this payment.' });
+        }
+
+        if (existing.status === 'paid') {
+            return res.json({ status: 'paid', appointmentId: existing.appointmentId, alreadyProcessed: true });
+        }
+
+        const session = await stripe.checkout.sessions.retrieve(sessionId);
+        if (session.payment_status !== 'paid') {
+            return res.status(409).json({
+                status: session.payment_status || 'unpaid',
+                message: 'Payment is not completed yet. Please wait a few seconds and retry.',
+            });
+        }
+
+        const { payment } = await finalizePaidSession(session);
+        return res.json({ status: payment.status, appointmentId: payment.appointmentId, paymentId: String(payment._id) });
+    } catch (error) {
+        next(error);
+    }
 };
 
 // ── GET /api/payments/:appointmentId ──────────────────────────────────────
@@ -386,6 +431,36 @@ exports.getAllPayments = async (req, res, next) => {
         }
         const payments = await Payment.find().sort({ createdAt: -1 });
         res.json(payments);
+    } catch (error) {
+        next(error);
+    }
+};
+
+// ── GET /api/payments/admin/report/pdf ───────────────────────────────────
+exports.getRevenueReportPdf = async (req, res, next) => {
+    try {
+        if (req.user?.role !== 'admin') {
+            return res.status(403).json({ message: 'Admin access required.' });
+        }
+
+        const [totals, payments] = await Promise.all([
+            Payment.aggregate([
+                { $match: { status: 'paid' } },
+                { $group: { _id: '$currency', total: { $sum: '$amount' }, count: { $sum: 1 } } },
+                { $sort: { _id: 1 } },
+            ]),
+            Payment.find({ status: 'paid' })
+                .sort({ updatedAt: -1 })
+                .limit(20)
+                .select('receiptNumber appointmentId doctorName amount currency status createdAt updatedAt')
+                .lean(),
+        ]);
+
+        const pdf = await generateRevenueReportPdfBuffer({ totals, payments, reportGeneratedAt: new Date() });
+
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', 'attachment; filename="medsync-paid-revenue-report.pdf"');
+        return res.send(pdf);
     } catch (error) {
         next(error);
     }

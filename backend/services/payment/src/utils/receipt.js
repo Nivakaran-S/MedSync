@@ -113,9 +113,232 @@ const generateReceiptPdfBuffer = async (receipt) => {
   return completed;
 };
 
+const generateRevenueReportPdfBuffer = async ({ totals = [], payments = [], reportGeneratedAt = new Date() }) => {
+  const doc = new PDFDocument({ size: 'A4', margin: 0 });
+  const chunks = [];
+
+  const completed = new Promise((resolve, reject) => {
+    doc.on('data', (chunk) => chunks.push(chunk));
+    doc.on('end', () => resolve(Buffer.concat(chunks)));
+    doc.on('error', reject);
+  });
+
+  const paidPayments = Array.isArray(payments) ? payments.filter((payment) => payment.status === 'paid') : [];
+  const totalRevenue = paidPayments.reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
+  const avgTransaction = paidPayments.length > 0 ? totalRevenue / paidPayments.length : 0;
+  
+  // Helper function to draw a colored box with text
+  const drawMetricCard = (x, y, width, height, bgColor, borderColor, label, value, unit = '') => {
+    doc.rect(x, y, width, height).fillColor(bgColor).fill();
+    doc.rect(x, y, width, height).strokeColor(borderColor).lineWidth(1.5).stroke();
+    
+    doc.fontSize(9).fillColor('#64748b').text(label, x + 15, y + 12, { width: width - 30 });
+    doc.fontSize(16).fillColor('#0f172a').font('Helvetica-Bold').text(value, x + 15, y + 28, { width: width - 30 });
+    if (unit) {
+      doc.fontSize(8).fillColor('#64748b').text(unit, x + 15, y + 50, { width: width - 30 });
+    }
+  };
+
+  // ===== PAGE 1: HEADER & SUMMARY =====
+  
+  // Gradient-like header background
+  doc.rect(0, 0, 595, 140).fillColor('#0f172a').fill();
+  
+  // Logo & Title
+  doc.fontSize(28).fillColor('#ffffff').font('Helvetica-Bold').text('MedSync', 48, 25);
+  doc.fontSize(12).fillColor('#0ea5e9').text('Revenue Intelligence Report', 48, 60);
+  
+  // Report period
+  doc.fontSize(9).fillColor('#cbd5e1').text(`Report Generated: ${new Date(reportGeneratedAt).toLocaleString()}`, 48, 80);
+  
+  // Decorative line
+  doc.moveTo(48, 135).lineTo(547, 135).strokeColor('#0ea5e9').lineWidth(2).stroke();
+
+  doc.moveDown(3.5);
+
+  // ===== KEY METRICS =====
+  doc.fontSize(13).fillColor('#0f172a').font('Helvetica-Bold').text('Key Performance Metrics', 48, 160);
+  
+  const cardY = 190;
+  const cardHeight = 85;
+  const cardGap = 12;
+  const cardWidth = (595 - 96 - cardGap * 3) / 4;
+  
+  // Card 1: Total Revenue
+  drawMetricCard(48, cardY, cardWidth, cardHeight, '#f0f9ff', '#0ea5e9', 
+    'Total Paid Revenue', `${totalRevenue.toLocaleString()}`, 'LKR');
+  
+  // Card 2: Transaction Count
+  drawMetricCard(48 + cardWidth + cardGap, cardY, cardWidth, cardHeight, '#f0fdf4', '#22c55e', 
+    'Paid Transactions', `${paidPayments.length}`, 'payments');
+  
+  // Card 3: Average Transaction
+  drawMetricCard(48 + (cardWidth + cardGap) * 2, cardY, cardWidth, cardHeight, '#fef3c7', '#eab308', 
+    'Avg. Transaction', `${Math.round(avgTransaction).toLocaleString()}`, 'per payment');
+  
+  // Card 4: Success Rate
+  const successRate = paidPayments.length > 0 ? 100 : 0;
+  drawMetricCard(48 + (cardWidth + cardGap) * 3, cardY, cardWidth, cardHeight, '#fce7f3', '#ec4899', 
+    'Success Rate', `${successRate.toFixed(0)}%`, 'completion');
+
+  // ===== REVENUE BY CURRENCY =====
+  doc.fontSize(13).fillColor('#0f172a').font('Helvetica-Bold').text('Revenue Breakdown by Currency', 48, 295);
+  
+  if (totals.length === 0) {
+    doc.fontSize(11).fillColor('#64748b').text('No paid revenue records found for this period.', 48, 320);
+  } else {
+    let currencyY = 320;
+    totals.forEach((row, idx) => {
+      const currency = String(row._id || 'USD').toUpperCase();
+      const amount = Number(row.total || 0);
+      const count = Number(row.count || 0);
+      const percentage = totalRevenue > 0 ? ((amount / totalRevenue) * 100) : 0;
+      
+      // Currency box
+      doc.rect(48, currencyY, 499, 45).strokeColor('#e2e8f0').lineWidth(0.5).stroke();
+      
+      doc.fontSize(11).fillColor('#0f172a').font('Helvetica-Bold').text(currency, 58, currencyY + 8);
+      doc.fontSize(10).fillColor('#64748b').text(`${count} transactions`, 150, currencyY + 8);
+      
+      doc.fontSize(12).fillColor('#0ea5e9').font('Helvetica-Bold').text(`${amount.toLocaleString()}`, 400, currencyY + 8);
+      
+      // Progress bar
+      const barWidth = 440;
+      const filledWidth = (percentage / 100) * barWidth;
+      doc.rect(58, currencyY + 30, barWidth, 8).fillColor('#e2e8f0').fill();
+      doc.rect(58, currencyY + 30, Math.max(filledWidth, 2), 8).fillColor('#0ea5e9').fill();
+      doc.fontSize(9).fillColor('#64748b').text(`${percentage.toFixed(1)}%`, 505, currencyY + 30);
+      
+      currencyY += 50;
+    });
+  }
+
+  // ===== TOP DOCTORS =====
+  const doctorMap = {};
+  paidPayments.forEach((payment) => {
+    const doctorName = payment.doctorName || 'Unknown Doctor';
+    if (!doctorMap[doctorName]) {
+      doctorMap[doctorName] = { name: doctorName, revenue: 0, count: 0, doctorId: payment.doctorId };
+    }
+    doctorMap[doctorName].revenue += Number(payment.amount || 0);
+    doctorMap[doctorName].count += 1;
+  });
+
+  const topDoctors = Object.values(doctorMap)
+    .sort((a, b) => b.revenue - a.revenue)
+    .slice(0, 10);
+
+  let currentY = doc.y + 20;
+  if (currentY > 700) {
+    doc.addPage();
+    currentY = 48;
+  }
+
+  doc.fontSize(13).fillColor('#0f172a').font('Helvetica-Bold').text('Top 10 Doctors by Revenue', 48, currentY);
+  currentY += 30;
+
+  if (topDoctors.length === 0) {
+    doc.fontSize(11).fillColor('#64748b').text('No doctor data available.', 48, currentY);
+  } else {
+    topDoctors.forEach((doctor, idx) => {
+      const rankColor = idx === 0 ? '#fbbf24' : idx === 1 ? '#c0c0c0' : idx === 2 ? '#cd7f32' : '#0ea5e9';
+      const medalEmoji = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : `${idx + 1}`;
+      
+      doc.rect(48, currentY, 499, 35).strokeColor('#e2e8f0').lineWidth(0.5).stroke();
+      
+      doc.fontSize(14).fillColor(rankColor).font('Helvetica-Bold').text(medalEmoji, 58, currentY + 6, { width: 30 });
+      doc.fontSize(10).fillColor('#0f172a').font('Helvetica-Bold').text(doctor.name.substring(0, 35), 100, currentY + 6);
+      doc.fontSize(9).fillColor('#64748b').text(`${doctor.count} consultations`, 100, currentY + 22);
+      
+      doc.fontSize(11).fillColor('#0ea5e9').font('Helvetica-Bold').text(`${doctor.revenue.toLocaleString()}`, 450, currentY + 10);
+      
+      currentY += 40;
+      
+      if (currentY > 730) {
+        doc.addPage();
+        currentY = 48;
+      }
+    });
+  }
+
+  // ===== RECENT TRANSACTIONS =====
+  currentY = doc.y + 20;
+  if (currentY > 700) {
+    doc.addPage();
+    currentY = 48;
+  }
+
+  doc.fontSize(13).fillColor('#0f172a').font('Helvetica-Bold').text('Recent Paid Transactions (Last 25)', 48, currentY);
+  currentY += 30;
+
+  // Table header
+  const headerY = currentY;
+  doc.rect(48, headerY, 499, 25).fillColor('#f8fafc').fill();
+  doc.rect(48, headerY, 499, 25).strokeColor('#cbd5e1').lineWidth(1).stroke();
+  
+  doc.fontSize(9).fillColor('#0f172a').font('Helvetica-Bold');
+  doc.text('Receipt #', 58, headerY + 6, { width: 110 });
+  doc.text('Amount', 175, headerY + 6, { width: 90 });
+  doc.text('Doctor', 270, headerY + 6, { width: 120 });
+  doc.text('Date', 395, headerY + 6, { width: 150 });
+  
+  currentY = headerY + 30;
+  
+  if (paidPayments.length === 0) {
+    doc.fontSize(10).fillColor('#64748b').text('No paid transactions available.', 48, currentY);
+  } else {
+    paidPayments.slice(0, 25).forEach((payment, idx) => {
+      if (currentY > 730) {
+        doc.addPage();
+        currentY = 48;
+      }
+      
+      const bgColor = idx % 2 === 0 ? '#ffffff' : '#f8fafc';
+      doc.rect(48, currentY, 499, 20).fillColor(bgColor).fill();
+      doc.rect(48, currentY, 499, 20).strokeColor('#e2e8f0').lineWidth(0.5).stroke();
+      
+      const receiptNum = payment.receiptNumber || String(payment._id).substring(0, 12);
+      const amount = `${String(payment.currency || 'LKR').toUpperCase()} ${Number(payment.amount || 0).toLocaleString()}`;
+      const doctor = (payment.doctorName || 'Doctor').substring(0, 20);
+      const date = new Date(payment.updatedAt || payment.createdAt || reportGeneratedAt).toLocaleDateString();
+      
+      doc.fontSize(8).fillColor('#0f172a').text(receiptNum, 58, currentY + 4, { width: 110 });
+      doc.fontSize(8).fillColor('#0ea5e9').font('Helvetica-Bold').text(amount, 175, currentY + 4, { width: 90 });
+      doc.fontSize(8).fillColor('#0f172a').text(doctor, 270, currentY + 4, { width: 120 });
+      doc.fontSize(8).fillColor('#64748b').text(date, 395, currentY + 4, { width: 150 });
+      
+      currentY += 22;
+    });
+  }
+
+  // ===== FOOTER =====
+  const pageCount = doc.bufferedPageRange().count;
+  for (let i = 1; i <= pageCount; i++) {
+    doc.switchToPage(i - 1);
+    
+    // Footer background
+    doc.rect(0, 760, 595, 82).fillColor('#f8fafc').fill();
+    doc.rect(0, 760, 595, 82).strokeColor('#cbd5e1').lineWidth(0.5).stroke();
+    
+    // Footer text
+    doc.fontSize(9).fillColor('#0f172a').font('Helvetica-Bold').text('CONFIDENTIAL - INTERNAL USE ONLY', 48, 770);
+    doc.fontSize(8).fillColor('#64748b').text('This report contains sensitive financial data and is intended solely for authorized MedSync administrators.', 48, 788);
+    
+    // Audit info
+    doc.fontSize(7).fillColor('#94a3b8').text(
+      `Report ID: ${crypto.randomBytes(4).toString('hex').toUpperCase()} | Generated: ${new Date(reportGeneratedAt).toISOString()} | Page ${i} of ${pageCount}`,
+      48, 806
+    );
+  }
+
+  doc.end();
+  return completed;
+};
+
 module.exports = {
   generateReceiptNumber,
   signReceiptHash,
   buildReceiptData,
   generateReceiptPdfBuffer,
+  generateRevenueReportPdfBuffer,
 };

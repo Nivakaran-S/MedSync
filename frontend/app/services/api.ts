@@ -566,6 +566,12 @@ export const paymentApi = {
     });
     return parseOrThrow(response, 'Failed to create payment session');
   },
+  confirmCheckoutSession: async (sessionId: string) => {
+    const response = await fetch(`${PAYMENT_SERVICE_URL}/confirm-session`, {
+      method: 'POST', headers: getAuthHeaders(), body: JSON.stringify({ sessionId }),
+    });
+    return parseOrThrow(response, 'Failed to confirm payment session');
+  },
   getPaymentByAppointment: async (appointmentId: string) => {
     const response = await fetch(`${PAYMENT_SERVICE_URL}/${appointmentId}`, { headers: getAuthHeaders() });
     return parseOrThrow(response, 'Failed to fetch payment details');
@@ -608,6 +614,29 @@ export const paymentApi = {
   listAllPayments: async () => {
     const response = await fetch(`${PAYMENT_SERVICE_URL}/admin/all`, { headers: getAuthHeaders() });
     return parseOrThrow(response, 'Failed to list payments');
+  },
+  downloadRevenueReportPdf: async () => {
+    const response = await fetch(`${PAYMENT_SERVICE_URL}/admin/report/pdf`, { headers: getAuthHeaders() });
+    if (!response.ok) {
+      let message = 'Failed to download revenue report';
+      try {
+        const error = await response.json();
+        if (error?.message) message = error.message;
+      } catch {
+        /* not JSON */
+      }
+      throw new Error(message);
+    }
+
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = 'medsync-paid-revenue-report.pdf';
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    window.URL.revokeObjectURL(url);
   },
   adminGetAllPayments: async () => {
     const response = await fetch(PAYMENT_SERVICE_URL, { headers: getAuthHeaders() });
