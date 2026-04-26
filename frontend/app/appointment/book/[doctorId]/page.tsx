@@ -19,6 +19,7 @@ export default function BookingPage({ params }: { params: Promise<{ doctorId: st
     const [availability, setAvailability] = useState<any[]>([]);
     const [slots, setSlots] = useState<string[]>([]);
     const [patientPhone, setPatientPhone] = useState<string | null>(null);
+    const [systemFee, setSystemFee] = useState(0);
     const router = useRouter();
 
     useEffect(() => {
@@ -29,12 +30,14 @@ export default function BookingPage({ params }: { params: Promise<{ doctorId: st
 
         const fetchData = async () => {
             try {
-                const [docData, availData] = await Promise.all([
+                const [docData, availData, feeSettings] = await Promise.all([
                     doctorApi.getDoctor(doctorId),
-                    doctorApi.getAvailability(doctorId)
+                    doctorApi.getAvailability(doctorId),
+                    doctorApi.getConsultationSettings().catch(() => ({ defaultConsultationFee: 0 })),
                 ]);
                 setDoctor(docData);
                 setAvailability(availData);
+                setSystemFee(Number(feeSettings?.defaultConsultationFee || 0));
                 // Fetch patient phone for SMS notifications
                 try {
                     const profile = await patientApi.getProfile();
@@ -58,6 +61,8 @@ export default function BookingPage({ params }: { params: Promise<{ doctorId: st
         const parsed = Number(raw);
         return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
     }, [doctor]);
+
+    const totalConsultationFee = useMemo(() => selectedDoctorFee + systemFee, [selectedDoctorFee, systemFee]);
 
     useEffect(() => {
         if (!date || availability.length === 0) {
@@ -122,7 +127,10 @@ export default function BookingPage({ params }: { params: Promise<{ doctorId: st
                 slotDate: date,
                 slotTime: slot,
                 reason,
-                consultationFee: selectedDoctorFee
+                consultationFee: totalConsultationFee,
+                doctorConsultationFee: selectedDoctorFee,
+                systemFee,
+                totalConsultationFee,
             });
 
             showToast('Appointment booked successfully!', 'success');
@@ -168,6 +176,24 @@ export default function BookingPage({ params }: { params: Promise<{ doctorId: st
                             <div style={{ background: 'var(--bg-light)', borderRadius: '16px', padding: '14px' }}>
                                 <div style={{ fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-muted)' }}>Days</div>
                                 <div style={{ fontWeight: 800, marginTop: '4px' }}>{availability.length}</div>
+                            </div>
+                        </div>
+
+                        <div style={{ background: 'linear-gradient(135deg, rgba(37,99,235,0.08), rgba(15,23,42,0.04))', borderRadius: '18px', padding: '16px', border: '1px solid var(--card-border)' }}>
+                            <div style={{ fontWeight: 800, marginBottom: '10px' }}>Fee breakdown</div>
+                            <div style={{ display: 'grid', gap: '8px', fontSize: '0.92rem', color: 'var(--text-secondary)' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px' }}>
+                                    <span>Doctor consultation fee</span>
+                                    <strong style={{ color: 'var(--text-primary)' }}>LKR {selectedDoctorFee.toLocaleString()}</strong>
+                                </div>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px' }}>
+                                    <span>Default system fee</span>
+                                    <strong style={{ color: 'var(--text-primary)' }}>LKR {systemFee.toLocaleString()}</strong>
+                                </div>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', paddingTop: '8px', borderTop: '1px solid var(--card-border)' }}>
+                                    <span style={{ fontWeight: 700, color: 'var(--text-primary)' }}>Total payable</span>
+                                    <strong style={{ color: 'var(--primary)' }}>LKR {totalConsultationFee.toLocaleString()}</strong>
+                                </div>
                             </div>
                         </div>
 
@@ -242,7 +268,7 @@ export default function BookingPage({ params }: { params: Promise<{ doctorId: st
                             </div>
                             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
                                 <span>Estimated fee</span>
-                                <strong>{selectedDoctorFee > 0 ? `LKR ${selectedDoctorFee.toLocaleString()}` : 'Fee not set'}</strong>
+                                <strong>{selectedDoctorFee > 0 ? `LKR ${totalConsultationFee.toLocaleString()}` : 'Fee not set'}</strong>
                             </div>
                         </div>
 

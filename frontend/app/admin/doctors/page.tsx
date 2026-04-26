@@ -3,18 +3,27 @@
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { doctorApi } from '../../services/api';
-import { ShieldBan, CheckCircle, RefreshCcw, UserCheck, Search, UserX, UserCheck2 } from 'lucide-react';
+import { ShieldBan, CheckCircle, RefreshCcw, UserCheck, Search, UserX, UserCheck2, DollarSign, PencilLine } from 'lucide-react';
+import { Modal, showToast } from '../../components/UI';
 
 export default function AdminManageDoctors() {
   const { user, isLoading } = useAuth();
   const [doctors, setDoctors] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [feeSettingsLoading, setFeeSettingsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [feeSettings, setFeeSettings] = useState({ defaultConsultationFee: 0 });
+  const [feeInput, setFeeInput] = useState('0');
+  const [savingSystemFee, setSavingSystemFee] = useState(false);
+  const [feeModalDoctor, setFeeModalDoctor] = useState<any | null>(null);
+  const [doctorFeeInput, setDoctorFeeInput] = useState('0');
+  const [savingDoctorFee, setSavingDoctorFee] = useState(false);
 
   useEffect(() => {
     if (user?.role === 'admin') {
       loadDoctors();
+      loadFeeSettings();
     }
   }, [user]);
 
@@ -27,6 +36,39 @@ export default function AdminManageDoctors() {
       console.error(err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadFeeSettings = async () => {
+    try {
+      setFeeSettingsLoading(true);
+      const data = await doctorApi.getConsultationSettings();
+      const defaultConsultationFee = Number(data?.defaultConsultationFee || 0);
+      setFeeSettings({ defaultConsultationFee });
+      setFeeInput(String(defaultConsultationFee));
+    } catch (err) {
+      showToast('Failed to load default system fee', 'error');
+    } finally {
+      setFeeSettingsLoading(false);
+    }
+  };
+
+  const saveSystemFee = async () => {
+    const nextFee = Number(feeInput);
+    if (!Number.isFinite(nextFee) || nextFee < 0) {
+      showToast('System fee must be a non-negative number', 'warning');
+      return;
+    }
+
+    try {
+      setSavingSystemFee(true);
+      const data = await doctorApi.updateConsultationSettings({ defaultConsultationFee: nextFee });
+      setFeeSettings({ defaultConsultationFee: Number(data?.defaultConsultationFee || 0) });
+      showToast('Default system fee updated', 'success');
+    } catch (err: any) {
+      showToast(err.message || 'Failed to update system fee', 'error');
+    } finally {
+      setSavingSystemFee(false);
     }
   };
 
@@ -56,6 +98,33 @@ export default function AdminManageDoctors() {
     }
   };
 
+  const openFeeModal = (doctor: any) => {
+    setFeeModalDoctor(doctor);
+    setDoctorFeeInput(String(Number(doctor?.consultationFee || 0)));
+  };
+
+  const saveDoctorFee = async () => {
+    if (!feeModalDoctor) return;
+
+    const nextFee = Number(doctorFeeInput);
+    if (!Number.isFinite(nextFee) || nextFee < 0) {
+      showToast('Doctor fee must be a non-negative number', 'warning');
+      return;
+    }
+
+    try {
+      setSavingDoctorFee(true);
+      await doctorApi.updateDoctor(feeModalDoctor._id, { consultationFee: nextFee });
+      showToast('Doctor consultation fee updated', 'success');
+      setFeeModalDoctor(null);
+      loadDoctors();
+    } catch (err: any) {
+      showToast(err.message || 'Failed to update doctor fee', 'error');
+    } finally {
+      setSavingDoctorFee(false);
+    }
+  };
+
   if (isLoading) return <div className="animate-in" style={{ padding: '20px' }}>Loading...</div>;
 
   if (user?.role !== 'admin') {
@@ -74,6 +143,8 @@ export default function AdminManageDoctors() {
     doc.contact?.email?.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
+  const effectiveSystemFee = feeSettings.defaultConsultationFee || 0;
+
   return (
     <div className="animate-in">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
@@ -84,6 +155,51 @@ export default function AdminManageDoctors() {
         <button className="med-button secondary" onClick={loadDoctors} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <RefreshCcw size={16} /> Refresh
         </button>
+      </div>
+
+      <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '16px', marginBottom: '24px' }}>
+        <div className="med-card" style={{ marginBottom: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
+            <div className="avatar sm" style={{ background: 'var(--primary-light)', color: 'var(--primary)' }}>
+              <DollarSign size={18} />
+            </div>
+            <div>
+              <h3 className="card-title" style={{ margin: 0 }}>Default System Fee</h3>
+              <p style={{ margin: '4px 0 0', color: 'var(--text-secondary)', fontSize: '0.88rem' }}>Added on top of each doctor fee during booking.</p>
+            </div>
+          </div>
+          <div style={{ display: 'grid', gap: '10px' }}>
+            <div style={{ fontWeight: 800, fontSize: '1.6rem' }}>LKR {effectiveSystemFee.toLocaleString()}</div>
+            <input
+              className="med-input"
+              type="number"
+              min={0}
+              value={feeInput}
+              onChange={(e) => setFeeInput(e.target.value)}
+              placeholder="Default system fee"
+              disabled={feeSettingsLoading}
+              style={{ marginBottom: 0 }}
+            />
+            <button className="med-button primary" onClick={saveSystemFee} disabled={savingSystemFee || feeSettingsLoading}>
+              {savingSystemFee ? 'Saving...' : 'Save system fee'}
+            </button>
+          </div>
+        </div>
+
+        <div className="med-card" style={{ marginBottom: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
+            <div className="avatar sm" style={{ background: 'var(--success-light)', color: 'var(--success)' }}>
+              <PencilLine size={18} />
+            </div>
+            <div>
+              <h3 className="card-title" style={{ margin: 0 }}>Doctor Fee Controls</h3>
+              <p style={{ margin: '4px 0 0', color: 'var(--text-secondary)', fontSize: '0.88rem' }}>Edit a doctor's fee directly from admin.</p>
+            </div>
+          </div>
+          <div style={{ color: 'var(--text-secondary)', lineHeight: 1.7 }}>
+            Use the <strong>Edit Fee</strong> action in the doctor table to override individual consultation fees.
+          </div>
+        </div>
       </div>
 
       <div className="med-card" style={{ marginBottom: '24px' }}>
@@ -157,6 +273,12 @@ export default function AdminManageDoctors() {
                     </td>
                     <td style={{ padding: '16px', textAlign: 'right' }}>
                       <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+                        <button
+                          className="med-button secondary sm"
+                          onClick={() => openFeeModal(doc)}
+                        >
+                          <DollarSign size={14} /> Edit Fee
+                        </button>
                         {/* Verify / Revoke */}
                         {!doc.isVerified ? (
                           <button
@@ -204,6 +326,36 @@ export default function AdminManageDoctors() {
           </table>
         )}
       </div>
+
+      <Modal isOpen={Boolean(feeModalDoctor)} onClose={() => setFeeModalDoctor(null)} title="Edit Doctor Consultation Fee" width="520px">
+        {feeModalDoctor && (
+          <div style={{ display: 'grid', gap: '16px' }}>
+            <div style={{ background: 'var(--bg-light)', borderRadius: '14px', padding: '14px' }}>
+              <div style={{ fontWeight: 800, fontSize: '1rem' }}>{feeModalDoctor.name}</div>
+              <div style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>{feeModalDoctor.specialty}</div>
+            </div>
+            <div>
+              <label className="med-label">Consultation Fee (LKR)</label>
+              <input
+                className="med-input"
+                type="number"
+                min={0}
+                value={doctorFeeInput}
+                onChange={(e) => setDoctorFeeInput(e.target.value)}
+                placeholder="Enter fee"
+              />
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+              <button className="med-button secondary" onClick={() => setFeeModalDoctor(null)}>
+                Cancel
+              </button>
+              <button className="med-button primary" onClick={saveDoctorFee} disabled={savingDoctorFee}>
+                {savingDoctorFee ? 'Saving...' : 'Save fee'}
+              </button>
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }

@@ -323,6 +323,16 @@ export const doctorApi = {
     const response = await fetch(`${DOCTOR_SERVICE_URL}/${id}`, { headers: getAuthHeaders() });
     return parseOrThrow(response, 'Failed to fetch doctor details');
   },
+  getConsultationSettings: async () => {
+    const response = await fetch(`${DOCTOR_SERVICE_URL}/settings/consultation-fee`, { headers: getAuthHeaders() });
+    return parseOrThrow(response, 'Failed to fetch consultation fee settings');
+  },
+  updateConsultationSettings: async (data: { defaultConsultationFee: number }) => {
+    const response = await fetch(`${DOCTOR_SERVICE_URL}/settings/consultation-fee`, {
+      method: 'PUT', headers: getAuthHeaders(), body: JSON.stringify(data),
+    });
+    return parseOrThrow(response, 'Failed to update consultation fee settings');
+  },
   updateDoctor: async (id: string, data: any) => {
     const response = await fetch(`${DOCTOR_SERVICE_URL}/${id}`, {
       method: 'PUT', headers: getAuthHeaders(), body: JSON.stringify(data),
@@ -538,7 +548,7 @@ export const telemedicineApi = {
 };
 
 export const paymentApi = {
-  createCheckoutSession: async (data: { appointmentId: string; patientId: string; doctorId: string; doctorName: string; amount: number }) => {
+  createCheckoutSession: async (data: { appointmentId: string; patientId: string; doctorId: string; doctorName: string; patientPhone?: string | null; amount: number }) => {
     const response = await fetch(`${PAYMENT_SERVICE_URL}/checkout`, {
       method: 'POST', headers: getAuthHeaders(), body: JSON.stringify(data),
     });
