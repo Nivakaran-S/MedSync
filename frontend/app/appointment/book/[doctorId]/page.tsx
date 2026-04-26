@@ -3,7 +3,7 @@
 import React, { useState, useEffect, use, useMemo } from 'react';
 import { MedCard as Card, MedButton as Button, showToast, Skeleton, Badge, MedInput as Input } from '../../../components/UI';
 import { doctorApi, appointmentApi, patientApi } from '@/app/services/api';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { User, CalendarCheck, ShieldCheck, Clock3, CreditCard } from 'lucide-react';
 import { useAuth } from '../../../context/AuthContext';
 
@@ -15,7 +15,11 @@ export default function BookingPage({ params }: { params: Promise<{ doctorId: st
     const [booking, setBooking] = useState(false);
     const [date, setDate] = useState('');
     const [slot, setSlot] = useState('');
-    const [reason, setReason] = useState('General consultation');
+    const searchParams = useSearchParams();
+    // #9 Pre-fill from symptom-checker deep-link (?reason=...&fromCheckId=...)
+    const initialReason = searchParams?.get('reason') || 'General consultation';
+    const fromCheckId = searchParams?.get('fromCheckId') || null;
+    const [reason, setReason] = useState(initialReason);
     const [availability, setAvailability] = useState<any[]>([]);
     const [slots, setSlots] = useState<string[]>([]);
     const [patientPhone, setPatientPhone] = useState<string | null>(null);
@@ -133,6 +137,8 @@ export default function BookingPage({ params }: { params: Promise<{ doctorId: st
                 doctorConsultationFee: selectedDoctorFee,
                 systemFee,
                 totalConsultationFee,
+                // #9 — back-link to the symptom check that prompted this booking
+                ...(fromCheckId ? { relatedSymptomCheckId: fromCheckId } : {}),
             });
 
             showToast('Appointment booked successfully!', 'success');

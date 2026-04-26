@@ -6,6 +6,9 @@ const paymentSchema = new mongoose.Schema(
         patientId: { type: String, required: true, index: true },
         doctorId: { type: String, required: true },
         doctorName: { type: String },
+        // Captured at checkout-creation time so the webhook can guarantee an
+        // address even if Stripe doesn't surface customer_details.email.
+        patientEmail: { type: String },
         patientPhone: { type: String },
         amount: { type: Number, required: true }, // in smallest currency unit (e.g. paise/cents)
         currency: { type: String, default: 'lkr' },
@@ -13,12 +16,18 @@ const paymentSchema = new mongoose.Schema(
         // Stripe identifiers
         stripeSessionId: { type: String, unique: true, sparse: true },
         stripePaymentIntentId: { type: String },
+        stripeRefundId: { type: String },
 
         status: {
             type: String,
             enum: ['pending', 'paid', 'failed', 'refunded'],
             default: 'pending',
         },
+
+        // Refund metadata (set when issueRefund() runs)
+        refundedAt: { type: Date },
+        refundedBy: { type: String },
+        refundReason: { type: String },
 
         receiptNumber: { type: String, unique: true, sparse: true },
         receiptHash: { type: String, unique: true, sparse: true },

@@ -1,4 +1,5 @@
 const axios = require('axios');
+const SymptomCheck = require('../models/SymptomCheck');
 
 const PATIENT_SERVICE_URL =
   process.env.PATIENT_SERVICE_URL || 'http://patient-management:3001/api/patients';
@@ -24,6 +25,25 @@ async function fetchPatientContext(patientId, authHeader) {
 }
 
 /**
+ * #7 Deeper history fetch — pulls medical history (surgeries, admissions),
+ * family history, and demographic profile (occupation if recorded). Used by
+ * the narrative endpoint and to enrich the triage prompt.
+ */
+async function fetchDeepHistory(patientId, authHeader) {
+  if (!patientId || !authHeader) return null;
+  try {
+    const { data } = await axios.get(`${PATIENT_SERVICE_URL}/${patientId}/full`, {
+      headers: { Authorization: authHeader },
+      timeout: 5000,
+    });
+    return data;
+  } catch (err) {
+    console.warn('[ai] deep-history lookup failed:', err.response?.status || err.message);
+    return null;
+  }
+}
+
+/**
  * Active-prescription list, used for drug-interaction cross-checks.
  */
 async function fetchActivePrescriptions(patientId, authHeader) {
@@ -36,6 +56,28 @@ async function fetchActivePrescriptions(patientId, authHeader) {
     return (data?.prescriptions || []).filter((p) => p.active !== false);
   } catch (err) {
     console.warn('[ai] prescription lookup failed:', err.response?.status || err.message);
+    return [];
+  }
+}
+
+/**
+ * #6 Recent symptom checks for this patient — last N within the past
+ * `windowDays`. Used to feed progression context into the prompt.
+ */
+async function fetchRecentChecks(patientId, { limit = 5, windowDays = 14 } = {}) {
+  if (!patientId) return [];
+  try {
+    const since = new Date(Date.now() - windowDays * 24 * 3600 * 1000);
+    return await SymptomCheck.find({
+      patientId,
+      timestamp: { $gte: since },
+    })
+      .sort({ timestamp: -1 })
+      .limit(limit)
+      .select('symptoms overallUrgency aiSummary timestamp')
+      .lean();
+  } catch (err) {
+    console.warn('[ai] recent-checks lookup failed:', err.message);
     return [];
   }
 }
@@ -84,4 +126,10 @@ function nextSlotFromAvailability(availability) {
   return null;
 }
 
-module.exports = { fetchPatientContext, fetchActivePrescriptions, fetchVerifiedDoctorsBySpecialty };
+module.exports = {
+  fetchPatientContext,
+  fetchDeepHistory,
+  fetchActivePrescriptions,
+  fetchRecentChecks,
+  fetchVerifiedDoctorsBySpecialty,
+};

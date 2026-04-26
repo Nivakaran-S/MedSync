@@ -23,10 +23,32 @@ spec:
         env:
         - name: KAFKA_BROKERS
           value: "kafka:9092"
+        - name: MONGO_BASE
+          valueFrom:
+            secretKeyRef:
+              name: medsync-secrets
+              key: MONGO_BASE
         - name: MONGO_URI
-          value: "mongodb://mongo:27017/appointment_db"
+          value: "$(MONGO_BASE)/appointment_db"
         - name: PORT
           value: "3003"
+        - name: JWT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: medsync-secrets
+              key: JWT_SECRET
+        - name: JWT_EXPIRE
+          valueFrom:
+            secretKeyRef:
+              name: medsync-secrets
+              key: JWT_EXPIRE
+        - name: DOCTOR_SERVICE_URL
+          value: "http://doctor-management:3002"
+        - name: INTERNAL_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: medsync-secrets
+              key: INTERNAL_API_KEY
         resources:
           requests:
             memory: "256Mi"

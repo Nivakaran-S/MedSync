@@ -31,8 +31,14 @@ services:
       timeout: 10s
       retries: 10
 
+  # Local MongoDB — opt-in. The platform now defaults to MongoDB Atlas
+  # (configured via MONGO_BASE in .env). This service only starts when you run
+  # the stack with the `local-mongo` profile, e.g.
+  #   docker compose --profile local-mongo up
+  # If you use it, also set MONGO_BASE=mongodb://mongo:27017 in .env.
   mongo:
     image: mongo:6.0
+    profiles: ["local-mongo"]
     ports:
       - "27017:27017"
     volumes:
@@ -60,12 +66,9 @@ services:
     build: ./backend/services/auth
     ports:
       - "${AUTH_PORT:-5000}:5000"
-    depends_on:
-      mongo:
-        condition: service_healthy
     env_file: ./.env
     environment:
-      - MONGO_URI=${MONGO_BASE:-mongodb://mongo:27017}/auth_db
+      - MONGO_URI=${MONGO_BASE}/auth_db
       - PORT=5000
     dns:
       - 8.8.8.8
@@ -78,11 +81,9 @@ services:
     depends_on:
       kafka:
         condition: service_healthy
-      mongo:
-        condition: service_healthy
     env_file: ./.env
     environment:
-      - MONGO_URI=${MONGO_BASE:-mongodb://mongo:27017}/notification_db
+      - MONGO_URI=${MONGO_BASE}/notification_db
       - PORT=3006
 
   patient-management:
@@ -92,12 +93,13 @@ services:
     depends_on:
       kafka:
         condition: service_healthy
-      mongo:
-        condition: service_healthy
     env_file: ./.env
     environment:
-      - MONGO_URI=${MONGO_BASE:-mongodb://mongo:27017}/patient_db
+      - MONGO_URI=${MONGO_BASE}/patient_db
       - PORT=3001
+      - CLOUDINARY_CLOUD_NAME=${CLOUDINARY_CLOUD_NAME}
+      - CLOUDINARY_API_KEY=${CLOUDINARY_API_KEY}
+      - CLOUDINARY_API_SECRET=${CLOUDINARY_API_SECRET}
     dns:
       - 8.8.8.8
       - 8.8.4.4
@@ -109,12 +111,13 @@ services:
     depends_on:
       kafka:
         condition: service_healthy
-      mongo:
-        condition: service_healthy
     env_file: ./.env
     environment:
-      - MONGO_URI=${MONGO_BASE:-mongodb://mongo:27017}/doctor_db
+      - MONGO_URI=${MONGO_BASE}/doctor_db
       - PORT=3002
+      - CLOUDINARY_CLOUD_NAME=${CLOUDINARY_CLOUD_NAME}
+      - CLOUDINARY_API_KEY=${CLOUDINARY_API_KEY}
+      - CLOUDINARY_API_SECRET=${CLOUDINARY_API_SECRET}
     dns:
       - 8.8.8.8
       - 8.8.4.4
@@ -126,12 +129,11 @@ services:
     depends_on:
       kafka:
         condition: service_healthy
-      mongo:
-        condition: service_healthy
     env_file: ./.env
     environment:
-      - MONGO_URI=${MONGO_BASE:-mongodb://mongo:27017}/appointment_db
+      - MONGO_URI=${MONGO_BASE}/appointment_db
       - DOCTOR_SERVICE_URL=http://doctor-management:3002
+      - INTERNAL_API_KEY=${INTERNAL_API_KEY}
       - PORT=3003
     dns:
       - 8.8.8.8
@@ -146,11 +148,9 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-      mongo:
-        condition: service_healthy
     env_file: ./.env
     environment:
-      - MONGO_URI=${MONGO_BASE:-mongodb://mongo:27017}/telemedicine_db
+      - MONGO_URI=${MONGO_BASE}/telemedicine_db
       - PORT=3004
 
   payment:
@@ -160,11 +160,11 @@ services:
     depends_on:
       kafka:
         condition: service_healthy
-      mongo:
-        condition: service_healthy
     env_file: ./.env
     environment:
-      - MONGO_URI=${MONGO_BASE:-mongodb://mongo:27017}/payment_db
+      - MONGO_URI=${MONGO_BASE}/payment_db
+      - APPOINTMENT_SERVICE_URL=http://appointment:3003
+      - INTERNAL_API_KEY=${INTERNAL_API_KEY}
       - PORT=3005
     dns:
       - 8.8.8.8
@@ -177,11 +177,9 @@ services:
     depends_on:
       kafka:
         condition: service_healthy
-      mongo:
-        condition: service_healthy
     env_file: ./.env
     environment:
-      - MONGO_URI=${MONGO_BASE:-mongodb://mongo:27017}/symptom_db
+      - MONGO_URI=${MONGO_BASE}/symptom_db
       - PORT=3007
     dns:
       - 8.8.8.8

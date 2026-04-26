@@ -6,8 +6,11 @@ namespace: medsync
 resources:
   - namespace.yaml
   - secrets.yaml
-  - mongo/deployment.yaml
-  - mongo/service.yaml
+  # MongoDB Atlas is the default — see secrets.yaml MONGO_BASE.
+  # To run an in-cluster Mongo for local dev, uncomment the two lines below
+  # AND set MONGO_BASE=mongodb://mongo:27017 in secrets.yaml.
+  # - mongo/deployment.yaml
+  # - mongo/service.yaml
   - redis/deployment.yaml
   - redis/service.yaml
   - zookeeper/deployment.yaml

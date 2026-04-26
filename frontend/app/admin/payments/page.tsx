@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { paymentApi } from '../../services/api';
-import { ShieldBan, CreditCard, DollarSign, TrendingUp, RefreshCcw, Search, ExternalLink, Filter, Mail, Download, FileText } from 'lucide-react';
+import { ShieldBan, CreditCard, DollarSign, TrendingUp, RefreshCcw, Search, ExternalLink, Filter, Mail, Download, Undo2, FileText } from 'lucide-react';
 import { Badge, Skeleton, showToast, Modal } from '../../components/UI';
 
 export default function AdminPaymentsPage() {
@@ -249,9 +249,29 @@ export default function AdminPaymentsPage() {
                                         />
                                     </td>
                                     <td style={{ padding: '16px', textAlign: 'right' }}>
-                                        <button className="med-button sm secondary" onClick={() => openDetails(p)}>
-                                            <ExternalLink size={14} /> Details
-                                        </button>
+                                        <div style={{ display: 'inline-flex', gap: '6px' }}>
+                                            {p.status === 'paid' && (
+                                                <button
+                                                    className="med-button sm danger"
+                                                    onClick={async () => {
+                                                        const reason = prompt('Refund reason (optional):') ?? undefined;
+                                                        if (!confirm(`Refund ${p.currency?.toUpperCase() || 'LKR'} ${p.amount.toLocaleString()} for ${p.doctorName}?`)) return;
+                                                        try {
+                                                            await paymentApi.refund(p.appointmentId, reason || undefined);
+                                                            showToast('Refund issued successfully', 'success');
+                                                            loadPayments();
+                                                        } catch (err) {
+                                                            showToast(err instanceof Error ? err.message : 'Refund failed', 'error');
+                                                        }
+                                                    }}
+                                                >
+                                                    <Undo2 size={14} /> Refund
+                                                </button>
+                                            )}
+                                            <button className="med-button sm secondary" onClick={() => openDetails(p)}>
+                                                <ExternalLink size={14} /> Details
+                                            </button>
+                                        </div>
                                     </td>
                                 </tr>
                             ))}

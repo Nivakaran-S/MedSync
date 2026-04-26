@@ -1,9 +1,14 @@
 .env
 .env.local
 .env.*.local
+
+# Kubernetes secrets — contains real credentials when populated.
+# Do not commit. See k8s/secrets.yaml.example (if present) for the template.
+k8s/secrets.yaml
 node_modules
 dist
 build
 .next
 *.log
 .DS_Store
+.claude

@@ -5,6 +5,7 @@ const APPOINTMENT_SERVICE_URL = process.env.NEXT_PUBLIC_APPOINTMENT_SERVICE_URL 
 const TELEMEDICINE_SERVICE_URL = process.env.NEXT_PUBLIC_TELEMEDICINE_SERVICE_URL || 'http://localhost:3004/api/sessions';
 const PAYMENT_SERVICE_URL = process.env.NEXT_PUBLIC_PAYMENT_SERVICE_URL || 'http://localhost:3005/api/payments';
 const SYMPTOM_CHECKER_URL = process.env.NEXT_PUBLIC_SYMPTOM_CHECKER_URL || 'http://localhost:3007/api/symptom-checker';
+const NOTIFICATION_SERVICE_URL = process.env.NEXT_PUBLIC_NOTIFICATION_SERVICE_URL || 'http://localhost:3006/api/notify';
 
 export const PATIENT_API_BASE = PATIENT_SERVICE_URL;
 
@@ -264,6 +265,31 @@ export const patientApi = {
     return parseOrThrow(response, 'Failed to delete prescription');
   },
 
+  // ── Privacy / portability (A5, A6) ──
+  getMyAuditLog: async () => {
+    const response = await fetch(`${PATIENT_SERVICE_URL}/audit-log`, { headers: getAuthHeaders() });
+    return parseOrThrow(response, 'Failed to fetch audit log');
+  },
+  exportMyData: async () => {
+    const response = await fetch(`${PATIENT_SERVICE_URL}/data-export`, { headers: getAuthHeaders() });
+    if (!response.ok) {
+      let message = 'Failed to export data';
+      try { const e = await response.json(); if (e?.message) message = e.message; } catch { /* ignore */ }
+      throw new Error(message);
+    }
+    const blob = await response.blob();
+    const filename = (response.headers.get('content-disposition') || '')
+      .split('filename=')[1]?.replace(/"/g, '') || `medsync-export-${Date.now()}.json`;
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.URL.revokeObjectURL(url);
+  },
+
   // ── Derived analytics ──
   getHealthScore: async (patientId?: string) => {
     const url = patientId
@@ -390,6 +416,17 @@ export const doctorApi = {
     const response = await fetch(`${DOCTOR_SERVICE_URL}/prescriptions`, {
       method: 'POST', headers: getAuthHeaders(), body: JSON.stringify(data),
     });
+    // A7: surface structured 409 (ALLERGY_CONFLICT) so callers can render
+    // an override modal instead of just an opaque toast.
+    if (response.status === 409) {
+      const body = await response.json().catch(() => ({}));
+      const err = new Error(body?.message || 'Allergy conflict') as Error & {
+        code?: string; warnings?: Array<Record<string, unknown>>;
+      };
+      err.code = body?.code;
+      err.warnings = body?.warnings;
+      throw err;
+    }
     return parseOrThrow(response, 'Failed to issue prescription');
   },
   verifyPrescription: async (verificationId: string) => {
@@ -401,6 +438,12 @@ export const doctorApi = {
       method: 'PATCH', headers: getAuthHeaders(), body: JSON.stringify({ isActive }),
     });
     return parseOrThrow(response, 'Failed to update doctor status');
+  },
+  changePassword: async (id: string, data: { currentPassword?: string; newPassword: string }) => {
+    const response = await fetch(`${DOCTOR_SERVICE_URL}/${id}/change-password`, {
+      method: 'POST', headers: getAuthHeaders(), body: JSON.stringify(data),
+    });
+    return parseOrThrow(response, 'Failed to change password');
   },
   listPendingLicenses: async () => {
     const response = await fetch(`${DOCTOR_SERVICE_URL}/licenses/pending`, { headers: getAuthHeaders() });
@@ -421,7 +464,10 @@ export interface SymptomAnalyzePayload {
   bodyLocation?: string;
   additionalContext?: string;
   patientId?: string;
+  language?: string;
 }
+
+export type SymptomImageKind = 'skin' | 'rash' | 'wound' | 'lab-report' | 'xray' | 'ecg' | 'other';
 
 export const symptomApi = {
   analyzeSymptoms: async (payload: string | SymptomAnalyzePayload, patientId?: string) => {
@@ -483,6 +529,149 @@ export const symptomApi = {
   getAdminAnalytics: async () => {
     const response = await fetch(`${SYMPTOM_CHECKER_URL}/admin/analytics`, { headers: getAuthHeaders() });
     return parseOrThrow(response, 'Failed to fetch analytics');
+  },
+
+  deleteCheck: async (id: string) => {
+    const response = await fetch(`${SYMPTOM_CHECKER_URL}/checks/${id}`, {
+      method: 'DELETE', headers: getAuthHeaders(),
+    });
+    return parseOrThrow(response, 'Failed to delete check');
+  },
+
+  submitFeedback: async (id: string, data: { type: 'false-positive' | 'false-negative' | 'correct'; comment?: string }) => {
+    const response = await fetch(`${SYMPTOM_CHECKER_URL}/checks/${id}/feedback`, {
+      method: 'POST', headers: getAuthHeaders(), body: JSON.stringify(data),
+    });
+    return parseOrThrow(response, 'Failed to submit feedback');
+  },
+
+  // #15 Bulk delete
+  bulkDeleteChecks: async (ids: string[]) => {
+    const response = await fetch(`${SYMPTOM_CHECKER_URL}/checks/bulk-delete`, {
+      method: 'POST', headers: getAuthHeaders(), body: JSON.stringify({ ids }),
+    });
+    return parseOrThrow(response, 'Failed to bulk-delete checks');
+  },
+
+  // #14 PDF export — triggers a browser download
+  downloadCheckPdf: async (id: string) => {
+    const response = await fetch(`${SYMPTOM_CHECKER_URL}/checks/${id}/export/pdf`, { headers: getAuthHeaders() });
+    if (!response.ok) {
+      let message = 'Failed to download PDF';
+      try { const e = await response.json(); if (e?.message) message = e.message; } catch { /* */ }
+      throw new Error(message);
+    }
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `medsync-symptom-check-${id}.pdf`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.URL.revokeObjectURL(url);
+  },
+
+  // #8 AI narrative summary (24h cached server-side)
+  getNarrative: async (data: { patientId?: string; language?: string; refresh?: boolean } = {}) => {
+    const qs = data.refresh ? '?refresh=true' : '';
+    const response = await fetch(`${SYMPTOM_CHECKER_URL}/narrative${qs}`, {
+      method: 'POST', headers: getAuthHeaders(), body: JSON.stringify({
+        patientId: data.patientId, language: data.language || 'en',
+      }),
+    });
+    return parseOrThrow(response, 'Failed to get narrative');
+  },
+
+  // #16 Admin prompt management
+  listPrompts: async () => {
+    const response = await fetch(`${SYMPTOM_CHECKER_URL}/admin/prompts`, { headers: getAuthHeaders() });
+    return parseOrThrow(response, 'Failed to list prompts');
+  },
+  createPrompt: async (data: { name: 'triage'|'image'|'narrative'|'conversation'; template: string; description?: string; activate?: boolean }) => {
+    const response = await fetch(`${SYMPTOM_CHECKER_URL}/admin/prompts`, {
+      method: 'POST', headers: getAuthHeaders(), body: JSON.stringify(data),
+    });
+    return parseOrThrow(response, 'Failed to create prompt');
+  },
+  activatePrompt: async (id: string) => {
+    const response = await fetch(`${SYMPTOM_CHECKER_URL}/admin/prompts/${id}/activate`, {
+      method: 'POST', headers: getAuthHeaders(),
+    });
+    return parseOrThrow(response, 'Failed to activate prompt');
+  },
+};
+
+export interface MedNotification {
+  _id: string;
+  userId: string;
+  type: 'in-app' | 'email' | 'sms';
+  category: 'appointment' | 'payment' | 'prescription' | 'account' | 'system' | 'other';
+  title?: string;
+  subject?: string;
+  message: string;
+  metadata?: Record<string, unknown>;
+  isRead: boolean;
+  readAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface NotificationListResponse {
+  items: MedNotification[];
+  page: number;
+  limit: number;
+  total: number;
+  unread: number;
+  totalPages: number;
+}
+
+export const notificationApi = {
+  list: async (opts?: { unreadOnly?: boolean; page?: number; limit?: number }): Promise<NotificationListResponse> => {
+    const qs = new URLSearchParams();
+    if (opts?.unreadOnly) qs.set('unreadOnly', 'true');
+    if (opts?.page) qs.set('page', String(opts.page));
+    if (opts?.limit) qs.set('limit', String(opts.limit));
+    const url = qs.toString() ? `${NOTIFICATION_SERVICE_URL}?${qs}` : NOTIFICATION_SERVICE_URL;
+    const response = await fetch(url, { headers: getAuthHeaders() });
+    return parseOrThrow(response, 'Failed to fetch notifications');
+  },
+  get: async (id: string): Promise<MedNotification> => {
+    const response = await fetch(`${NOTIFICATION_SERVICE_URL}/${id}`, { headers: getAuthHeaders() });
+    return parseOrThrow(response, 'Failed to fetch notification');
+  },
+  markRead: async (id: string): Promise<MedNotification> => {
+    const response = await fetch(`${NOTIFICATION_SERVICE_URL}/${id}/read`, {
+      method: 'PATCH', headers: getAuthHeaders(),
+    });
+    return parseOrThrow(response, 'Failed to mark notification as read');
+  },
+  markAllRead: async (): Promise<{ updated: number }> => {
+    const response = await fetch(`${NOTIFICATION_SERVICE_URL}/read-all`, {
+      method: 'PATCH', headers: getAuthHeaders(),
+    });
+    return parseOrThrow(response, 'Failed to mark notifications as read');
+  },
+  delete: async (id: string): Promise<{ message: string }> => {
+    const response = await fetch(`${NOTIFICATION_SERVICE_URL}/${id}`, {
+      method: 'DELETE', headers: getAuthHeaders(),
+    });
+    return parseOrThrow(response, 'Failed to delete notification');
+  },
+  adminTrigger: async (data: {
+    userId?: string;
+    email?: string;
+    phone?: string;
+    title?: string;
+    subject?: string;
+    message: string;
+    category?: string;
+    channels: Array<'in-app' | 'email' | 'sms'>;
+  }) => {
+    const response = await fetch(`${NOTIFICATION_SERVICE_URL}/admin/trigger`, {
+      method: 'POST', headers: getAuthHeaders(), body: JSON.stringify(data),
+    });
+    return parseOrThrow(response, 'Failed to trigger notification');
   },
 };
 
@@ -560,7 +749,7 @@ export const telemedicineApi = {
 };
 
 export const paymentApi = {
-  createCheckoutSession: async (data: { appointmentId: string; patientId: string; doctorId: string; doctorName: string; patientPhone?: string | null; amount: number }) => {
+  createCheckoutSession: async (data: { appointmentId: string; patientId: string; doctorId: string; doctorName: string; patientEmail?: string | null; patientPhone?: string | null; amount: number }) => {
     const response = await fetch(`${PAYMENT_SERVICE_URL}/checkout`, {
       method: 'POST', headers: getAuthHeaders(), body: JSON.stringify(data),
     });
@@ -641,6 +830,12 @@ export const paymentApi = {
   adminGetAllPayments: async () => {
     const response = await fetch(PAYMENT_SERVICE_URL, { headers: getAuthHeaders() });
     return parseOrThrow(response, 'Failed to fetch all system payments');
+  },
+  refund: async (appointmentId: string, reason?: string) => {
+    const response = await fetch(`${PAYMENT_SERVICE_URL}/${appointmentId}/refund`, {
+      method: 'POST', headers: getAuthHeaders(), body: JSON.stringify({ reason }),
+    });
+    return parseOrThrow(response, 'Failed to issue refund');
   },
 };
 

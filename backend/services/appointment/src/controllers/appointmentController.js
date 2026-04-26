@@ -334,18 +334,54 @@ exports.rescheduleAppointment = async (req, res, next) => {
             return res.status(409).json({ message: 'This slot is already booked.' });
         }
 
+        const wasPaid = appointment.paymentStatus === 'paid';
+        const previousSlot = { date: appointment.slotDate, time: appointment.slotTime };
+
         appointment.slotDate = slotDate;
         appointment.slotTime = slotTime;
+
+        // If the appointment was paid, the original charge is for the OLD slot.
+        // Reset to unpaid + pending so the patient re-pays for the new slot,
+        // and emit a cancelled event for the old payment so Stripe issues a refund.
+        if (wasPaid) {
+            appointment.paymentStatus = 'unpaid';
+            appointment.status = 'pending';
+            appointment.notes = [
+                appointment.notes,
+                `Rescheduled from ${previousSlot.date} ${previousSlot.time} — refund issued, re-payment required`,
+            ].filter(Boolean).join(' | ');
+        }
+
         await appointment.save();
+
+        if (wasPaid) {
+            // Re-use the cancellation handler's refund flow for the old payment.
+            await sendEvent('appointment-events', {
+                type: 'APPOINTMENT_CANCELLED',
+                data: {
+                    appointmentId: appointment._id,
+                    wasPaid: true,
+                    cancelledBy: 'reschedule',
+                    patientId: appointment.patientId,
+                    patientEmail: appointment.patientEmail,
+                    patientPhone: appointment.patientPhone || null,
+                    doctorName: appointment.doctorName,
+                },
+            });
+        }
 
         await sendEvent('appointment-events', {
             type: 'APPOINTMENT_RESCHEDULED',
             data: {
                 appointmentId: appointment._id,
+                patientId: appointment.patientId,
                 patientEmail: appointment.patientEmail,
+                patientPhone: appointment.patientPhone || null,
                 doctorName: appointment.doctorName,
                 date: slotDate,
                 time: slotTime,
+                previousSlot,
+                refundIssued: wasPaid,
             },
         });
 

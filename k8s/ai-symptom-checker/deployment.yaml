@@ -25,6 +25,27 @@ spec:
           value: "kafka:9092"
         - name: PORT
           value: "3007"
+        - name: MONGO_BASE
+          valueFrom:
+            secretKeyRef:
+              name: medsync-secrets
+              key: MONGO_BASE
+        - name: MONGO_URI
+          value: "$(MONGO_BASE)/symptom_db"
+        - name: JWT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: medsync-secrets
+              key: JWT_SECRET
+        - name: PATIENT_SERVICE_URL
+          value: "http://patient-management:3001"
+        - name: DOCTOR_SERVICE_URL
+          value: "http://doctor-management:3002"
+        - name: GEMINI_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: medsync-secrets
+              key: GEMINI_API_KEY
         resources:
           requests:
             memory: "256Mi"

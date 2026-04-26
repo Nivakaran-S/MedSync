@@ -42,6 +42,20 @@ export default function PrescriptionEditor({
   const [issuedResult, setIssuedResult] = useState<any>(null);
   const sigCanvas = useRef<any>(null);
 
+  // A7: structured warnings returned by the backend allergy precheck.
+  // When set, an override modal is shown.
+  const [allergyConflict, setAllergyConflict] = useState<{
+    warnings: Array<{
+      allergen: string;
+      severity: string;
+      matchedDrug: string;
+      patientReportedSubstance: string;
+      message: string;
+      medicationName?: string;
+    }>;
+    pendingPayload: any;
+  } | null>(null);
+
   const addMedication = () => {
     setMedications([...medications, { id: Date.now().toString(), medication: '', dosage: '', frequency: '', duration: '' }]);
   };
@@ -146,16 +160,37 @@ export default function PrescriptionEditor({
         signatureBase64
       };
 
-      const result = await doctorApi.issuePrescription(payload);
-      
-      setIssuedResult(result);
-      showToast('Prescription issued successfully!', 'success');
-      if (typeof onSuccess === 'function') onSuccess(result);
+      await submitPrescription(payload, false);
     } catch (err: any) {
       console.error('Prescription issuance failed:', err);
       showToast(err.message || 'Error connecting to issuance service.', 'error');
     } finally {
       setIsIssuing(false);
+    }
+  };
+
+  // Shared submitter — used both for the initial attempt and the
+  // override-confirm path. Encapsulates the 409 → modal flow.
+  const submitPrescription = async (payload: any, withOverride: boolean) => {
+    try {
+      const finalPayload = withOverride ? { ...payload, acknowledgedAllergyOverride: true } : payload;
+      const result = await doctorApi.issuePrescription(finalPayload);
+      setIssuedResult(result);
+      setAllergyConflict(null);
+      showToast(
+        withOverride
+          ? 'Prescription issued (allergy override acknowledged).'
+          : 'Prescription issued successfully!',
+        'success'
+      );
+      if (typeof onSuccess === 'function') onSuccess(result);
+    } catch (err: any) {
+      if (err?.code === 'ALLERGY_CONFLICT' && Array.isArray(err.warnings)) {
+        // Hold the modal open with the structured warnings.
+        setAllergyConflict({ warnings: err.warnings, pendingPayload: payload });
+        return;
+      }
+      throw err;
     }
   };
 
@@ -301,6 +336,106 @@ export default function PrescriptionEditor({
         .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 10px; }
       `}</style>
+
+      {/* A7: Allergy override modal */}
+      {allergyConflict && (
+        <AllergyOverrideModal
+          warnings={allergyConflict.warnings}
+          onCancel={() => setAllergyConflict(null)}
+          onConfirm={async () => {
+            setIsIssuing(true);
+            try {
+              await submitPrescription(allergyConflict.pendingPayload, true);
+            } catch (err: any) {
+              showToast(err?.message || 'Override failed', 'error');
+            } finally {
+              setIsIssuing(false);
+            }
+          }}
+          submitting={isIssuing}
+        />
+      )}
+    </div>
+  );
+}
+
+// A7: Allergy override modal — surfaced when the backend returns a 409
+// ALLERGY_CONFLICT. Doctor must explicitly confirm to proceed; the
+// confirmation is then stored on the prescription as an audit note.
+function AllergyOverrideModal({
+  warnings, onCancel, onConfirm, submitting,
+}: {
+  warnings: Array<{
+    allergen: string;
+    severity: string;
+    matchedDrug: string;
+    patientReportedSubstance: string;
+    message: string;
+    medicationName?: string;
+  }>;
+  onCancel: () => void;
+  onConfirm: () => void;
+  submitting: boolean;
+}) {
+  const [acknowledged, setAcknowledged] = useState(false);
+  const hasLifeThreatening = warnings.some(
+    (w) => w.severity === 'life-threatening' || w.severity === 'severe'
+  );
+  return (
+    <div style={{
+      position: 'fixed', inset: 0,
+      background: 'rgba(15, 23, 42, 0.55)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      padding: 24, zIndex: 1000,
+    }}>
+      <div style={{
+        background: 'white', borderRadius: 16, maxWidth: 560, width: '100%',
+        padding: 24, boxShadow: '0 24px 48px rgba(0,0,0,0.25)',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14, color: 'var(--error)' }}>
+          <AlertCircle size={22} />
+          <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 800 }}>
+            Allergy conflict detected
+          </h3>
+        </div>
+        <p style={{ marginTop: 0, color: 'var(--text-secondary)' }}>
+          The patient has a recorded allergy that conflicts with one or more medications you are about to prescribe.
+        </p>
+        <ul style={{ marginTop: 12, paddingLeft: 18 }}>
+          {warnings.map((w, i) => (
+            <li key={i} style={{ fontSize: '0.9rem', marginBottom: 8, color: 'var(--text-primary)' }}>
+              <strong>{w.medicationName || w.matchedDrug}</strong>: {w.message}
+            </li>
+          ))}
+        </ul>
+        {hasLifeThreatening && (
+          <div style={{
+            marginTop: 12, padding: 12,
+            background: 'rgba(239, 68, 68, 0.1)', border: '1px solid #fecaca',
+            borderRadius: 8, color: 'var(--error)', fontWeight: 700,
+          }}>
+            ⚠️ Patient reports a SEVERE / LIFE-THREATENING allergy. Re-confirm only if clinically justified.
+          </div>
+        )}
+        <label style={{ display: 'flex', gap: 8, alignItems: 'flex-start', marginTop: 16, fontSize: '0.9rem' }}>
+          <input
+            type="checkbox"
+            checked={acknowledged}
+            onChange={(e) => setAcknowledged(e.target.checked)}
+            style={{ marginTop: 4 }}
+          />
+          <span>
+            I have discussed this allergy risk with the patient and want to proceed.
+            A note will be added to the prescription record.
+          </span>
+        </label>
+        <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 18 }}>
+          <Button className="secondary" onClick={onCancel}>Cancel</Button>
+          <Button className="primary" onClick={onConfirm} disabled={!acknowledged || submitting}>
+            {submitting ? 'Issuing…' : 'Proceed despite allergy'}
+          </Button>
+        </div>
+      </div>
     </div>
   );
 }

@@ -9,7 +9,7 @@ import { useAuth } from '../context/AuthContext';
 import {
   UserCog, Stethoscope, Clock, Calendar, Home,
   Search, CalendarClock, User, FileText, Bot, Video, LayoutDashboard,
-  Users, LineChart, CreditCard, LogOut, HeartPulse, Brain,
+  Users, LineChart, CreditCard, LogOut, HeartPulse, Brain, Bell, ShieldCheck, Shield,
 } from 'lucide-react';
 
 const getNavItems = (role?: string) => {
@@ -17,12 +17,14 @@ const getNavItems = (role?: string) => {
     return [
       { href: '/admin', label: 'Admin Dashboard', icon: <LayoutDashboard size={20} /> },
       { href: '/admin/doctors', label: 'Manage Doctors', icon: <UserCog size={20} /> },
+      { href: '/admin/license-management', label: 'Pending Licenses', icon: <ShieldCheck size={20} /> },
       { href: '/admin/patients', label: 'Manage Patients', icon: <Users size={20} /> },
       { href: '/admin/appointments', label: 'All Appointments', icon: <Calendar size={20} /> },
       { href: '/admin/payments', label: 'System Payments', icon: <CreditCard size={20} /> },
       { href: '/admin/oversight', label: 'Platform Oversight', icon: <LineChart size={20} /> },
       { href: '/admin/health', label: 'Service Health', icon: <HeartPulse size={20} /> },
       { href: '/admin/ai-insights', label: 'AI Triage Insights', icon: <Brain size={20} /> },
+      { href: '/notifications', label: 'Notifications', icon: <Bell size={20} /> },
     ];
   }
   if (role === 'doctor') {
@@ -31,6 +33,7 @@ const getNavItems = (role?: string) => {
       { href: '/doctor/availability', label: 'My Schedule', icon: <Clock size={20} /> },
       { href: '/doctor/appointments', label: 'Appointments', icon: <Calendar size={20} /> },
       { href: '/telemedicine', label: 'Virtual Meetings', icon: <Video size={20} /> },
+      { href: '/notifications', label: 'Notifications', icon: <Bell size={20} /> },
     ];
   }
   return [
@@ -43,6 +46,8 @@ const getNavItems = (role?: string) => {
     { href: '/patient/records', label: 'Records & Documents', icon: <FileText size={20} /> },
     { href: '/symptom-checker', label: 'AI Symptom Checker', icon: <Bot size={20} /> },
     { href: '/payment', label: 'Billing & Payments', icon: <CreditCard size={20} /> },
+    { href: '/notifications', label: 'Notifications', icon: <Bell size={20} /> },
+    { href: '/patient/privacy', label: 'Privacy & Activity', icon: <Shield size={20} /> },
   ];
 };
 
@@ -72,9 +77,9 @@ export function SidebarLayout({ children }: { children: React.ReactNode }) {
     }
 
     const allowedPrefixesByRole: Record<string, string[]> = {
-      admin: ['/admin', '/'],
-      doctor: ['/doctor', '/telemedicine', '/'],
-      patient: ['/patient', '/appointment', '/symptom-checker', '/telemedicine', '/payment', '/'],
+      admin: ['/admin', '/notifications', '/'],
+      doctor: ['/doctor', '/telemedicine', '/notifications', '/'],
+      patient: ['/patient', '/appointment', '/symptom-checker', '/telemedicine', '/payment', '/notifications', '/'],
     };
 
     const allowedPrefixes = allowedPrefixesByRole[user.role] || [];
