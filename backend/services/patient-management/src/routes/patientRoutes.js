@@ -71,6 +71,8 @@ router.get('/', authMiddleware, ctrl.listPatients);
 
 // ─── Doctor / admin scoped (must come AFTER literal routes above) ─────────────
 router.post('/:patientId/prescriptions', authMiddleware, ctrl.doctorIssuePrescription);
+router.post('/:patientId/records/history', authMiddleware, ctrl.doctorAddMedicalRecord);
+router.post('/:patientId/documents/upload', authMiddleware, upload.single('file'), ctrl.doctorUploadDocument);
 router.get('/:patientId/full', authMiddleware, ctrl.getPatientForProvider);
 router.get('/:patientId/health-score', authMiddleware, ctrl.getHealthScore);
 router.get('/:patientId/summary', authMiddleware, ctrl.getMedicalSummary);

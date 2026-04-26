@@ -100,6 +100,11 @@ const medicalRecordSchema = new mongoose.Schema(
     notes: { type: String },
     icd10Code: { type: String },
     attachments: [{ type: String }],
+    // Who entered this record. 'self' = patient typed it; 'doctor' / 'admin'
+    // = clinician. Doctor view should visually distinguish self-reported rows.
+    source: { type: String, enum: ['self', 'doctor', 'admin'], default: 'self' },
+    createdById: { type: String },   // doctorId/adminId/patientId of the author
+    createdByName: { type: String }, // human-readable label of author
   },
   { _id: true, timestamps: true }
 );
@@ -119,6 +124,10 @@ const documentSchema = new mongoose.Schema(
     },
     uploadedBy: { type: String, default: 'self' },
     description: { type: String },
+    // Same source convention as medical records.
+    source: { type: String, enum: ['self', 'doctor', 'admin'], default: 'self' },
+    createdById: { type: String },
+    createdByName: { type: String },
   },
   { _id: true, timestamps: true }
 );

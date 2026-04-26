@@ -588,7 +588,16 @@ exports.addMedicalRecord = async (req, res) => {
     if (!description) return res.status(400).json({ message: 'Description is required.' });
     const patient = await Patient.findById(req.user.patientId);
     if (!patient) return res.status(404).json({ message: 'Patient not found' });
-    const record = { description, diagnosis, doctor, notes, icd10Code };
+    const record = {
+      description,
+      diagnosis,
+      doctor,
+      notes,
+      icd10Code,
+      source: 'self',
+      createdById: req.user.patientId,
+      createdByName: `${patient.firstName} ${patient.lastName}`,
+    };
     if (date) record.date = date;
     patient.medicalHistory.push(record);
     await patient.save();
@@ -647,7 +656,10 @@ exports.addPrescription = async (req, res) => {
       instructions,
       verificationId,
       signatureBase64: 'manual_issuance_sig',
-      issuedAt: date || new Date()
+      issuedAt: date || new Date(),
+      source: 'self',
+      createdById: req.user.patientId,
+      createdByName: `${patient.firstName} ${patient.lastName}`,
     });
 
     await newPrescription.save();
@@ -694,17 +706,23 @@ exports.doctorIssuePrescription = async (req, res) => {
 
     const verificationId = crypto.randomBytes(6).toString('hex').toUpperCase();
 
+    const issuerSource = req.user.role === 'admin' ? 'admin' : 'doctor';
+    const issuerName = prescribedBy || req.user.email || (issuerSource === 'admin' ? 'Administrator' : 'Doctor');
+
     const prescription = new Prescription({
       patientId,
       patientName: `${patient.firstName} ${patient.lastName}`,
       doctorId: req.user.doctorId || req.user.id,
-      doctorName: prescribedBy || 'Doctor',
+      doctorName: issuerName,
       appointmentId: 'manual',
       medications: [{ medication, dosage, frequency, duration }],
       instructions,
       verificationId,
       signatureBase64: 'manual_issuance_sig',
-      issuedAt: date || new Date()
+      issuedAt: date || new Date(),
+      source: issuerSource,
+      createdById: req.user.doctorId || req.user.id,
+      createdByName: issuerName,
     });
 
     await prescription.save();
@@ -747,6 +765,9 @@ exports.uploadDocument = async (req, res) => {
       type: req.body.type || 'Report',
       description: req.body.description,
       uploadedBy: req.user.role,
+      source: 'self',
+      createdById: req.user.patientId,
+      createdByName: `${patient.firstName} ${patient.lastName}`,
     };
     patient.documents.push(newDoc);
     await patient.save();
@@ -820,6 +841,92 @@ exports.getHealthScore = async (req, res) => {
       lastVitalRecord: (patient.vitalSigns || []).slice(-1)[0] || null,
       generatedAt: new Date(),
     });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// ─── Provider-authored entries (doctor / admin) ──────────────────────────────
+
+const isProvider = (user) => user && (user.role === 'doctor' || user.role === 'admin');
+
+exports.doctorAddMedicalRecord = async (req, res) => {
+  try {
+    if (!isProvider(req.user)) {
+      return res.status(403).json({ message: 'Forbidden. Only doctors or admins can add records on behalf of patients.' });
+    }
+    const { patientId } = req.params;
+    const { description, diagnosis, doctor, notes, date, icd10Code } = req.body;
+    if (!description) return res.status(400).json({ message: 'Description is required.' });
+
+    const patient = await Patient.findById(patientId);
+    if (!patient) return res.status(404).json({ message: 'Patient not found' });
+
+    const issuerSource = req.user.role === 'admin' ? 'admin' : 'doctor';
+    const issuerName = doctor || req.user.email || (issuerSource === 'admin' ? 'Administrator' : 'Doctor');
+
+    const record = {
+      description,
+      diagnosis,
+      doctor: issuerName,
+      notes,
+      icd10Code,
+      source: issuerSource,
+      createdById: req.user.doctorId || req.user.id,
+      createdByName: issuerName,
+    };
+    if (date) record.date = date;
+
+    patient.medicalHistory.push(record);
+    await patient.save();
+    audit(req, patient._id, 'PROVIDER_ADD_MEDICAL_RECORD');
+
+    res.status(201).json(patient.medicalHistory[patient.medicalHistory.length - 1]);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+exports.doctorUploadDocument = async (req, res) => {
+  try {
+    if (!isProvider(req.user)) {
+      return res.status(403).json({ message: 'Forbidden. Only doctors or admins can upload on behalf of patients.' });
+    }
+    if (!req.file) return res.status(400).json({ message: 'No file uploaded' });
+
+    const { patientId } = req.params;
+    const patient = await Patient.findById(patientId);
+    if (!patient) return res.status(404).json({ message: 'Patient not found' });
+
+    const issuerSource = req.user.role === 'admin' ? 'admin' : 'doctor';
+    const issuerName = req.body.uploadedByName || req.user.email || (issuerSource === 'admin' ? 'Administrator' : 'Doctor');
+
+    const newDoc = {
+      fileName: req.file.originalname,
+      fileUrl: req.file.path.replace(/\\/g, '/'),
+      fileSizeBytes: req.file.size,
+      mimeType: req.file.mimetype,
+      type: req.body.type || 'Report',
+      description: req.body.description,
+      uploadedBy: req.user.role,
+      source: issuerSource,
+      createdById: req.user.doctorId || req.user.id,
+      createdByName: issuerName,
+    };
+    patient.documents.push(newDoc);
+    await patient.save();
+    audit(req, patient._id, 'PROVIDER_UPLOAD_DOCUMENT', newDoc.fileName);
+
+    await sendEvent('patient-events', {
+      type: 'DOCUMENT_UPLOADED',
+      patientId: patient._id,
+      documentName: newDoc.fileName,
+      documentType: newDoc.type,
+      uploadedBySource: issuerSource,
+      timestamp: new Date(),
+    });
+
+    res.status(201).json(patient.documents[patient.documents.length - 1]);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }

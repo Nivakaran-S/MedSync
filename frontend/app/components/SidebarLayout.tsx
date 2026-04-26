@@ -19,6 +19,7 @@ const getNavItems = (role?: string) => {
       { href: '/admin/doctors', label: 'Manage Doctors', icon: <UserCog size={20} /> },
       { href: '/admin/license-management', label: 'Pending Licenses', icon: <ShieldCheck size={20} /> },
       { href: '/admin/patients', label: 'Manage Patients', icon: <Users size={20} /> },
+      { href: '/admin/patient-records', label: 'Patient Records Entry', icon: <FileText size={20} /> },
       { href: '/admin/appointments', label: 'All Appointments', icon: <Calendar size={20} /> },
       { href: '/admin/payments', label: 'System Payments', icon: <CreditCard size={20} /> },
       { href: '/admin/oversight', label: 'Platform Oversight', icon: <LineChart size={20} /> },
@@ -32,6 +33,7 @@ const getNavItems = (role?: string) => {
       { href: '/doctor', label: 'Doctor Dashboard', icon: <Stethoscope size={20} /> },
       { href: '/doctor/availability', label: 'My Schedule', icon: <Clock size={20} /> },
       { href: '/doctor/appointments', label: 'Appointments', icon: <Calendar size={20} /> },
+      { href: '/doctor/patient-records', label: 'Patient Records Entry', icon: <FileText size={20} /> },
       { href: '/telemedicine', label: 'Virtual Meetings', icon: <Video size={20} /> },
       { href: '/notifications', label: 'Notifications', icon: <Bell size={20} /> },
     ];

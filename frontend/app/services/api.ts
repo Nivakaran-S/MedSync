@@ -98,6 +98,18 @@ export const patientApi = {
     });
     return parseOrThrow(response, 'Failed to issue prescription');
   },
+  doctorAddMedicalRecord: async (patientId: string, data: any) => {
+    const response = await fetch(`${PATIENT_SERVICE_URL}/${patientId}/records/history`, {
+      method: 'POST', headers: getAuthHeaders(), body: JSON.stringify(data),
+    });
+    return parseOrThrow(response, 'Failed to add medical record');
+  },
+  doctorUploadDocument: async (patientId: string, formData: FormData) => {
+    const response = await fetch(`${PATIENT_SERVICE_URL}/${patientId}/documents/upload`, {
+      method: 'POST', headers: getAuthHeadersNoContentType(), body: formData,
+    });
+    return parseOrThrow(response, 'Failed to upload document');
+  },
 
   uploadDocument: async (formData: FormData) => {
     const response = await fetch(`${PATIENT_SERVICE_URL}/documents/upload`, {
