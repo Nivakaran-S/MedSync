@@ -88,7 +88,16 @@ const buildContextBlock = (patientCtx, prescriptions, deepHistory) => {
     if (prescriptions?.length) {
       lines.push(
         `- Active medications: ${prescriptions
-          .map((p) => `${p.medication} ${p.dosage || ''}`.trim() + ' ' + sourceTag(p))
+          .map((p) => {
+            // Prescription model stores meds as an array; older shape used flat fields.
+            const m = Array.isArray(p.medications) && p.medications.length ? p.medications[0] : null;
+            const med = (m?.medication || p.medication || '').trim();
+            const dose = (m?.dosage || p.dosage || '').trim();
+            const head = [med, dose].filter(Boolean).join(' ').trim();
+            if (!head) return null;
+            return `${head} ${sourceTag(p)}`;
+          })
+          .filter(Boolean)
           .join('; ')}`
       );
     }
