@@ -712,17 +712,30 @@ async function runConversation(convo) {
   if (!genAI) {
     return 'AI is not currently available. Please consult a general physician for evaluation.';
   }
+  const history = convo.messages
+    .map((m) => `${m.role.toUpperCase()}: ${m.content}`)
+    .join('\n');
+  const prompt = `${history}\n\nASSISTANT: (reply concisely, ask one focused follow-up question if needed, escalate to "EMERGENCY — call 1990" only if life-threatening)`;
+
+  // Flash first — chat is low-stakes and Flash still has a free-tier quota.
+  // Only escalate to Pro on a hard Flash failure that isn't quota-related.
   try {
-    const model = genAI.getGenerativeModel({ model: MODEL_PRO });
-    const history = convo.messages
-      .map((m) => `${m.role.toUpperCase()}: ${m.content}`)
-      .join('\n');
-    const prompt = `${history}\n\nASSISTANT: (reply concisely, ask one focused follow-up question if needed, escalate to "EMERGENCY — call 1990" only if life-threatening)`;
+    const model = genAI.getGenerativeModel({ model: MODEL_FLASH });
     const result = await model.generateContent(prompt);
     return result.response.text().trim();
-  } catch (err) {
-    console.warn('[ai] runConversation error:', err.message);
-    return 'I could not generate a response right now. If this is urgent, please contact your healthcare provider.';
+  } catch (flashErr) {
+    console.warn(`[ai] runConversation Flash failed — ${describeLlmError(flashErr)}`);
+    if (MODEL_PRO === MODEL_FLASH || isQuotaError(flashErr)) {
+      return 'I could not generate a response right now. If this is urgent, please contact your healthcare provider.';
+    }
+    try {
+      const model = genAI.getGenerativeModel({ model: MODEL_PRO });
+      const result = await model.generateContent(prompt);
+      return result.response.text().trim();
+    } catch (proErr) {
+      console.warn(`[ai] runConversation Pro also failed — ${describeLlmError(proErr)}`);
+      return 'I could not generate a response right now. If this is urgent, please contact your healthcare provider.';
+    }
   }
 }
 
