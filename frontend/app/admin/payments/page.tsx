@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { paymentApi } from '../../services/api';
-import { ShieldBan, CreditCard, DollarSign, TrendingUp, RefreshCcw, Search, ExternalLink, Filter, Mail, Download, Undo2 } from 'lucide-react';
+import { ShieldBan, CreditCard, DollarSign, TrendingUp, RefreshCcw, Search, ExternalLink, Filter, Mail, Download, Undo2, FileText } from 'lucide-react';
 import { Badge, Skeleton, showToast, Modal } from '../../components/UI';
 
 export default function AdminPaymentsPage() {
@@ -15,6 +15,7 @@ export default function AdminPaymentsPage() {
     const [selectedPayment, setSelectedPayment] = useState<any | null>(null);
     const [emailing, setEmailing] = useState(false);
     const [downloading, setDownloading] = useState(false);
+    const [reportDownloading, setReportDownloading] = useState(false);
 
     useEffect(() => {
         if (user?.role === 'admin') {
@@ -87,6 +88,18 @@ export default function AdminPaymentsPage() {
         }
     };
 
+    const handleDownloadRevenueReport = async () => {
+        try {
+            setReportDownloading(true);
+            await paymentApi.downloadRevenueReportPdf();
+            showToast('Revenue report downloaded', 'success');
+        } catch (err: any) {
+            showToast(err.message || 'Failed to download revenue report', 'error');
+        } finally {
+            setReportDownloading(false);
+        }
+    };
+
     return (
         <div className="animate-in" style={{ display: 'grid', gap: '22px' }}>
             <section style={{ background: 'linear-gradient(135deg, #0f172a 0%, #1d4ed8 100%)', color: 'white', borderRadius: '24px', padding: '28px' }}>
@@ -96,9 +109,23 @@ export default function AdminPaymentsPage() {
                         <h1 style={{ fontSize: '2rem', fontWeight: 800, marginBottom: '8px' }}>Financial overlook</h1>
                         <p style={{ color: 'rgba(255,255,255,0.82)', lineHeight: 1.7, maxWidth: '760px', margin: 0 }}>Track payments, review reconciliation, and inspect consultation transactions with a clean operational view.</p>
                     </div>
-                    <button className="med-button secondary" onClick={loadPayments}>
-                        <RefreshCcw size={16} /> Refresh
-                    </button>
+                    <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                        <button
+                            className="med-button secondary"
+                            onClick={handleDownloadRevenueReport}
+                            disabled={reportDownloading}
+                            style={{ color: '#ffffff', borderColor: 'rgba(255,255,255,0.7)', background: 'rgba(255,255,255,0.12)' }}
+                        >
+                            <FileText size={16} /> {reportDownloading ? 'Preparing...' : 'Export Paid Revenue PDF'}
+                        </button>
+                        <button
+                            className="med-button secondary"
+                            onClick={loadPayments}
+                            style={{ color: '#ffffff', borderColor: 'rgba(255,255,255,0.7)', background: 'rgba(255,255,255,0.12)' }}
+                        >
+                            <RefreshCcw size={16} /> Refresh
+                        </button>
+                    </div>
                 </div>
             </section>
 
@@ -253,7 +280,7 @@ export default function AdminPaymentsPage() {
                 )}
             </div>
 
-            <Modal isOpen={Boolean(selectedPayment)} onClose={() => setSelectedPayment(null)} title="Payment Details" width="720px">
+            <Modal isOpen={Boolean(selectedPayment)} onClose={() => setSelectedPayment(null)} title="Payment Details" width="980px">
                 {selectedPayment && (
                     <div style={{ display: 'grid', gap: '18px' }}>
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px' }}>
@@ -273,10 +300,10 @@ export default function AdminPaymentsPage() {
                             </div>
                         </div>
 
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '14px' }}>
                             <div style={{ background: 'var(--bg-light)', borderRadius: '14px', padding: '14px' }}>
                                 <div style={{ fontSize: '0.78rem', textTransform: 'uppercase', color: 'var(--text-muted)' }}>Reference</div>
-                                <div style={{ marginTop: '8px', lineHeight: 1.7 }}>
+                                <div style={{ marginTop: '8px', lineHeight: 1.7, wordBreak: 'break-word' }}>
                                     <div><strong>Appointment:</strong> {selectedPayment.appointmentId}</div>
                                     <div><strong>Doctor:</strong> {selectedPayment.doctorName || '—'}</div>
                                     <div><strong>Patient:</strong> {selectedPayment.patientId || '—'}</div>
@@ -285,7 +312,7 @@ export default function AdminPaymentsPage() {
                             </div>
                             <div style={{ background: 'var(--bg-light)', borderRadius: '14px', padding: '14px' }}>
                                 <div style={{ fontSize: '0.78rem', textTransform: 'uppercase', color: 'var(--text-muted)' }}>Audit</div>
-                                <div style={{ marginTop: '8px', lineHeight: 1.7 }}>
+                                <div style={{ marginTop: '8px', lineHeight: 1.7, wordBreak: 'break-word' }}>
                                     <div><strong>Payment Intent:</strong> {selectedPayment.stripePaymentIntentId || '—'}</div>
                                     <div><strong>Created:</strong> {new Date(selectedPayment.createdAt).toLocaleString()}</div>
                                     <div><strong>Updated:</strong> {new Date(selectedPayment.updatedAt || selectedPayment.createdAt).toLocaleString()}</div>

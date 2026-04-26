@@ -68,6 +68,8 @@ export default function BookingPage({ params }: { params: Promise<{ doctorId: st
 
     const totalConsultationFee = useMemo(() => selectedDoctorFee + systemFee, [selectedDoctorFee, systemFee]);
 
+    const normalizeSlotTime = (value: string) => String(value || '').replace(/\s+/g, '').trim();
+
     useEffect(() => {
         if (!date || availability.length === 0) {
             setSlots([]);
@@ -89,8 +91,8 @@ export default function BookingPage({ params }: { params: Promise<{ doctorId: st
                     .map(a => `${a.startTime} - ${a.endTime}`);
                 
                 // Filter out already booked slots
-                const bookedTimes = booked.map((b: any) => b.slotTime);
-                const filtered = daySlots.filter(s => !bookedTimes.includes(s));
+                const bookedTimes = new Set(booked.map((b: any) => normalizeSlotTime(b.slotTime)));
+                const filtered = daySlots.filter((s) => !bookedTimes.has(normalizeSlotTime(s)));
                 
                 setSlots(filtered);
             } catch (err) {

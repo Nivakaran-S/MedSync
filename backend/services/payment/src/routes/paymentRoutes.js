@@ -11,9 +11,11 @@ router.post('/webhook', ctrl.handleWebhook);
 // ── Protected Routes ───────────────────────────────────────────────────────
 // Create a Stripe Checkout session for an appointment
 router.post('/checkout', auth, createCheckoutRules, ctrl.createCheckoutSession);
+router.post('/confirm-session', auth, ctrl.confirmCheckoutSession);
 
 // Admin: all payments + revenue summary (must come before `/:appointmentId`)
 router.get('/admin/all', auth, ctrl.listAllPayments);
+router.get('/admin/report/pdf', auth, ctrl.getRevenueReportPdf);
 
 // Public verification endpoint for tamper-evident receipt hash
 router.get('/verify/:receiptHash', ctrl.verifyReceiptHash);
