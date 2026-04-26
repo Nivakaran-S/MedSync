@@ -28,14 +28,6 @@ interface Appointment {
   notes?: string;
 }
 
-interface AllergyEntry {
-  _id: string;
-  substance: string;
-  severity?: 'mild' | 'moderate' | 'severe' | 'life-threatening';
-  reaction?: string;
-  diagnosedDate?: string;
-}
-
 interface PatientRecord {
   profile: {
     id: string;
@@ -46,7 +38,7 @@ interface PatientRecord {
     dateOfBirth?: string;
     gender?: string;
     bloodType?: string;
-    allergies?: AllergyEntry[];
+    allergies?: string;
   };
   medicalHistory: Array<{ _id: string; description: string; diagnosis?: string; doctor?: string; notes?: string; date: string; source?: string; createdByName?: string }>;
   prescriptions: Array<{ _id: string; medication: string; dosage: string; frequency?: string; duration?: string; instructions?: string; prescribedBy?: string; date: string; source?: string; createdByName?: string; doctorName?: string }>;
@@ -401,7 +393,7 @@ export default function DoctorAppointments() {
           appointmentId={selectedAppointment?._id || ''}
           patientId={selectedAppointment?.patientId || ''}
           patientName={selectedAppointment?.patientName || ''}
-          patientAllergies={Array.isArray(record?.profile?.allergies) ? record.profile.allergies : []}
+          patientAllergies={record?.profile?.allergies ? (typeof record.profile.allergies === 'string' ? [record.profile.allergies] : record.profile.allergies as any) : []}
           doctorName={user?.name}
           onSuccess={onPrescriptionSuccess}
           onCancel={() => setShowPrescriptionModal(false)}
@@ -428,51 +420,9 @@ export default function DoctorAppointments() {
                 <div>Gender: {record.profile.gender || '—'}</div>
                 <div>DOB: {record.profile.dateOfBirth ? new Date(record.profile.dateOfBirth).toLocaleDateString() : '—'}</div>
                 <div>Blood Type: {record.profile.bloodType || '—'}</div>
+                <div>Allergies: <strong style={{ color: record.profile.allergies ? '#dc2626' : 'inherit' }}>{record.profile.allergies || '—'}</strong></div>
               </div>
             </section>
-
-            {(() => {
-              const allergies = record.profile.allergies || [];
-              const hasCritical = allergies.some(a => a.severity === 'severe' || a.severity === 'life-threatening');
-              return (
-                <section>
-                  <h4 style={{ marginBottom: '8px', color: hasCritical ? '#991b1b' : 'var(--primary-dark)' }}>
-                    {hasCritical ? '⚠ ' : ''}Allergies ({allergies.length})
-                  </h4>
-                  {allergies.length === 0 ? (
-                    <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>No allergies on file.</p>
-                  ) : (
-                    <div style={{
-                      display: 'flex', flexDirection: 'column', gap: '6px',
-                      background: hasCritical ? '#fef2f2' : 'var(--bg-main)',
-                      border: hasCritical ? '1px solid #fecaca' : '1px solid var(--card-border)',
-                      borderRadius: 'var(--radius-sm)', padding: '10px 12px',
-                    }}>
-                      {allergies.map(a => {
-                        const sev = a.severity || 'mild';
-                        const isCritical = sev === 'severe' || sev === 'life-threatening';
-                        const sevColors: Record<string, { bg: string; fg: string }> = {
-                          'mild':              { bg: '#dcfce7', fg: '#166534' },
-                          'moderate':          { bg: '#fef3c7', fg: '#92400e' },
-                          'severe':            { bg: '#fee2e2', fg: '#991b1b' },
-                          'life-threatening':  { bg: '#7f1d1d', fg: '#fff' },
-                        };
-                        const c = sevColors[sev];
-                        return (
-                          <div key={a._id} style={{ fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                            <strong style={{ color: isCritical ? '#991b1b' : 'inherit' }}>{a.substance}</strong>
-                            <span style={{ fontSize: '0.7rem', fontWeight: 700, padding: '2px 8px', borderRadius: 999, background: c.bg, color: c.fg, textTransform: 'uppercase', letterSpacing: 0.3 }}>
-                              {sev}
-                            </span>
-                            {a.reaction && <span style={{ color: 'var(--text-secondary)' }}>· {a.reaction}</span>}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </section>
-              );
-            })()}
 
             <section>
               <h4 style={{ marginBottom: '8px', color: 'var(--primary-dark)' }}>Medical History ({record.medicalHistory.length})</h4>
