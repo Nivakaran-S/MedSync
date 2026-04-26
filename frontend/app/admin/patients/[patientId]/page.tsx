@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useAuth } from '../../../context/AuthContext';
 import { patientApi } from '../../../services/api';
 import { Card, Tabs, Badge } from '../../../components/UI';
+import SourceBadge from '../../../components/SourceBadge';
 import { ShieldBan, ArrowLeft, FileText, Activity, ScrollText, Clock } from 'lucide-react';
 
 export default function AdminPatientDetailPage({ params }: { params: Promise<{ patientId: string }> }) {
@@ -168,8 +169,11 @@ export default function AdminPatientDetailPage({ params }: { params: Promise<{ p
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                   {full.medicalHistory.map((h: any) => (
-                    <div key={h._id} className="history-item">
-                      <div style={{ fontSize: '0.9rem' }}><strong>{h.description}</strong></div>
+                    <div key={h._id} className="history-item" style={{ borderLeft: h.source === 'self' ? '3px solid #f59e0b' : undefined }}>
+                      <div style={{ fontSize: '0.9rem' }}>
+                        <strong>{h.description}</strong>
+                        <SourceBadge source={h.source} by={h.createdByName} />
+                      </div>
                       {h.diagnosis && <div style={{ fontSize: '0.85rem' }}>Diagnosis: {h.diagnosis}</div>}
                       <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
                         {h.doctor || 'Unknown doctor'} · {new Date(h.date).toLocaleDateString()}
@@ -185,8 +189,11 @@ export default function AdminPatientDetailPage({ params }: { params: Promise<{ p
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                   {full.prescriptions.map((rx: any) => (
-                    <div key={rx._id} className="history-item">
-                      <div style={{ fontSize: '0.9rem' }}><strong>{rx.medication}</strong> — {rx.dosage}</div>
+                    <div key={rx._id} className="history-item" style={{ borderLeft: rx.source === 'self' ? '3px solid #f59e0b' : undefined }}>
+                      <div style={{ fontSize: '0.9rem' }}>
+                        <strong>{rx.medication || (rx.medications && rx.medications[0]?.medication)}</strong> — {rx.dosage || (rx.medications && rx.medications[0]?.dosage)}
+                        <SourceBadge source={rx.source} by={rx.createdByName || rx.doctorName} />
+                      </div>
                       <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>{rx.frequency || ''} {rx.duration ? `· ${rx.duration}` : ''}</div>
                       <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{rx.prescribedBy || ''} · {new Date(rx.date).toLocaleDateString()}</div>
                     </div>
@@ -204,9 +211,10 @@ export default function AdminPatientDetailPage({ params }: { params: Promise<{ p
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                 {full.documents.map((d: any) => (
-                  <div key={d._id} className="history-item" style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <div key={d._id} className="history-item" style={{ display: 'flex', justifyContent: 'space-between', borderLeft: d.source === 'self' ? '3px solid #f59e0b' : undefined }}>
                     <div>
                       <strong>{d.fileName}</strong>
+                      <SourceBadge source={d.source} by={d.createdByName} />
                       <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>{d.type} · {new Date(d.uploadDate).toLocaleDateString()}</div>
                     </div>
                   </div>
