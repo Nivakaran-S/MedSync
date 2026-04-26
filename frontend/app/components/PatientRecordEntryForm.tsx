@@ -3,7 +3,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { MedCard as Card, MedInput as Input, MedButton as Button, Tabs, showToast } from './UI';
 import { patientApi } from '../services/api';
-import { Search, FileText, Pill, Upload, User, AlertTriangle, Activity, Syringe } from 'lucide-react';
+import { Search, FileText, Pill, Upload, User } from 'lucide-react';
 
 export interface PatientPickerOption {
   _id: string;
@@ -45,31 +45,6 @@ export default function PatientRecordEntryForm({ patients, loadingPatients, empt
   }, [patients, selectedId]);
 
   const selected = patients.find((p) => p._id === selectedId);
-
-  // ── Patient context (allergies/vitals/vaccinations/conditions/recent records) ──
-  const [contextData, setContextData] = useState<any | null>(null);
-  const [contextLoading, setContextLoading] = useState(false);
-
-  const loadContext = async (id: string) => {
-    if (!id) {
-      setContextData(null);
-      return;
-    }
-    setContextLoading(true);
-    try {
-      const full = await patientApi.getPatientFull(id);
-      setContextData(full);
-    } catch (e: any) {
-      console.warn('[PatientRecordEntryForm] context load failed:', e?.message || e);
-      setContextData(null);
-    } finally {
-      setContextLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    if (selectedId) loadContext(selectedId);
-  }, [selectedId]);
 
   // ── Medical record state ──
   const [recordForm, setRecordForm] = useState({
@@ -119,7 +94,6 @@ export default function PatientRecordEntryForm({ patients, loadingPatients, empt
       showToast('Medical record saved to patient.', 'success');
       setRecordForm({ description: '', diagnosis: '', doctor: '', notes: '', icd10Code: '', date: '' });
       onSaved?.();
-      loadContext(selectedId);
     } catch (e: any) {
       showToast(e?.message || 'Failed to save record.', 'error');
     } finally {
@@ -139,7 +113,6 @@ export default function PatientRecordEntryForm({ patients, loadingPatients, empt
       showToast('Prescription issued.', 'success');
       setRxForm({ medication: '', dosage: '', frequency: '', duration: '', instructions: '', prescribedBy: '' });
       onSaved?.();
-      loadContext(selectedId);
     } catch (e: any) {
       showToast(e?.message || 'Failed to issue prescription.', 'error');
     } finally {
@@ -164,7 +137,6 @@ export default function PatientRecordEntryForm({ patients, loadingPatients, empt
       setFile(null);
       setDocDescription('');
       onSaved?.();
-      loadContext(selectedId);
     } catch (e: any) {
       showToast(e?.message || 'Failed to upload document.', 'error');
     } finally {
@@ -237,9 +209,6 @@ export default function PatientRecordEntryForm({ patients, loadingPatients, empt
           <p style={{ color: '#64748b' }}>Select a patient on the left to begin.</p>
         ) : (
           <>
-            {/* ── Existing record context ── */}
-            <PatientContextPanel data={contextData} loading={contextLoading} />
-
             <Tabs
               tabs={['Medical History', 'Prescription', 'Document']}
               activeTab={tab}
@@ -378,192 +347,6 @@ export default function PatientRecordEntryForm({ patients, loadingPatients, empt
           </>
         )}
       </Card>
-    </div>
-  );
-}
-
-// ── Read-only summary of the selected patient's existing record. Critical
-// allergies surface as a red banner so providers see them before prescribing.
-function PatientContextPanel({ data, loading }: { data: any | null; loading: boolean }) {
-  if (loading) {
-    return (
-      <div style={{ padding: 12, marginBottom: 14, background: '#f8fafc', borderRadius: 10, color: '#64748b', fontSize: '0.85rem' }}>
-        Loading patient record…
-      </div>
-    );
-  }
-  if (!data) {
-    return (
-      <div style={{ padding: 12, marginBottom: 14, background: '#f8fafc', borderRadius: 10, color: '#64748b', fontSize: '0.85rem' }}>
-        Could not load patient context. Continuing without it — safety checks may be limited.
-      </div>
-    );
-  }
-
-  const allergies: any[] = data.profile?.allergies || [];
-  const conditions: any[] = data.profile?.chronicConditions || [];
-  const vitals: any[] = data.vitalSigns || [];
-  const vaccinations: any[] = data.vaccinations || [];
-  const recentRx: any[] = (data.prescriptions || []).slice(0, 3);
-  const latestVital = vitals.length ? [...vitals].sort((a: any, b: any) => +new Date(b.recordedAt) - +new Date(a.recordedAt))[0] : null;
-  const overdueVaccines = vaccinations.filter(v => v.nextDueDate && new Date(v.nextDueDate) < new Date());
-  const criticalAllergies = allergies.filter(a => ['severe', 'life-threatening'].includes(a.severity));
-
-  const sevColors: Record<string, { bg: string; fg: string }> = {
-    'mild':              { bg: '#dcfce7', fg: '#166534' },
-    'moderate':          { bg: '#fef3c7', fg: '#92400e' },
-    'severe':            { bg: '#fee2e2', fg: '#991b1b' },
-    'life-threatening':  { bg: '#7f1d1d', fg: '#fff' },
-  };
-
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 16 }}>
-      {/* Critical allergy banner */}
-      {criticalAllergies.length > 0 && (
-        <div style={{
-          padding: '12px 14px', borderRadius: 10,
-          background: '#fef2f2', border: '1px solid #fecaca',
-          display: 'flex', alignItems: 'flex-start', gap: 10,
-        }}>
-          <AlertTriangle size={20} color="#991b1b" style={{ flexShrink: 0, marginTop: 2 }} />
-          <div style={{ fontSize: '0.88rem', color: '#7f1d1d' }}>
-            <strong>Critical allergies on file:</strong>{' '}
-            {criticalAllergies.map((a, i) => (
-              <span key={a._id || i}>
-                {i > 0 && ', '}
-                {a.substance} ({a.severity})
-              </span>
-            ))}
-            . Verify before prescribing.
-          </div>
-        </div>
-      )}
-
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 10 }}>
-        {/* Allergies */}
-        <div style={{ padding: 12, borderRadius: 10, background: '#fff', border: '1px solid #e2e8f0' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
-            <AlertTriangle size={14} color="#92400e" />
-            <strong style={{ fontSize: '0.82rem', color: '#0f172a' }}>Allergies ({allergies.length})</strong>
-          </div>
-          {allergies.length === 0 ? (
-            <p style={{ margin: 0, fontSize: '0.82rem', color: '#94a3b8' }}>None on file.</p>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-              {allergies.map(a => {
-                const c = sevColors[a.severity || 'mild'] || sevColors.mild;
-                return (
-                  <div key={a._id} style={{ fontSize: '0.82rem', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                    <strong>{a.substance}</strong>
-                    <span style={{
-                      fontSize: '0.65rem', fontWeight: 700, padding: '1px 6px', borderRadius: 999,
-                      background: c.bg, color: c.fg, textTransform: 'uppercase', letterSpacing: 0.3,
-                    }}>{a.severity || 'mild'}</span>
-                    {a.reaction && <span style={{ color: '#64748b' }}>· {a.reaction}</span>}
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-
-        {/* Active chronic conditions */}
-        <div style={{ padding: 12, borderRadius: 10, background: '#fff', border: '1px solid #e2e8f0' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
-            <Activity size={14} color="#0369a1" />
-            <strong style={{ fontSize: '0.82rem', color: '#0f172a' }}>Conditions ({conditions.length})</strong>
-          </div>
-          {conditions.length === 0 ? (
-            <p style={{ margin: 0, fontSize: '0.82rem', color: '#94a3b8' }}>None on file.</p>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-              {conditions.map(c => (
-                <div key={c._id} style={{ fontSize: '0.82rem' }}>
-                  <strong>{c.name}</strong>
-                  {c.status && <span style={{ color: c.status === 'active' ? '#991b1b' : '#64748b' }}> · {c.status}</span>}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Latest vitals */}
-        <div style={{ padding: 12, borderRadius: 10, background: '#fff', border: '1px solid #e2e8f0' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
-            <Activity size={14} color="#16a34a" />
-            <strong style={{ fontSize: '0.82rem', color: '#0f172a' }}>Latest vitals</strong>
-          </div>
-          {!latestVital ? (
-            <p style={{ margin: 0, fontSize: '0.82rem', color: '#94a3b8' }}>No vitals on file.</p>
-          ) : (
-            <div style={{ fontSize: '0.82rem', lineHeight: 1.6 }}>
-              {latestVital.bloodPressureSystolic && <div>BP {latestVital.bloodPressureSystolic}/{latestVital.bloodPressureDiastolic ?? '—'}</div>}
-              {latestVital.heartRateBpm && <div>HR {latestVital.heartRateBpm} bpm</div>}
-              {latestVital.temperatureC && <div>Temp {latestVital.temperatureC}°C</div>}
-              {latestVital.oxygenSaturation && <div>SpO₂ {latestVital.oxygenSaturation}%</div>}
-              {latestVital.bmi && <div>BMI {latestVital.bmi}</div>}
-              <div style={{ color: '#94a3b8', fontSize: '0.74rem', marginTop: 2 }}>
-                {new Date(latestVital.recordedAt).toLocaleString()}
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Vaccinations */}
-        <div style={{ padding: 12, borderRadius: 10, background: '#fff', border: '1px solid #e2e8f0' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
-            <Syringe size={14} color="#7c3aed" />
-            <strong style={{ fontSize: '0.82rem', color: '#0f172a' }}>Vaccinations ({vaccinations.length})</strong>
-            {overdueVaccines.length > 0 && (
-              <span style={{ fontSize: '0.65rem', fontWeight: 700, padding: '1px 6px', borderRadius: 999, background: '#fee2e2', color: '#991b1b', textTransform: 'uppercase', letterSpacing: 0.3 }}>
-                {overdueVaccines.length} overdue
-              </span>
-            )}
-          </div>
-          {vaccinations.length === 0 ? (
-            <p style={{ margin: 0, fontSize: '0.82rem', color: '#94a3b8' }}>None on file.</p>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-              {vaccinations.slice(0, 4).map(v => {
-                const overdue = v.nextDueDate && new Date(v.nextDueDate) < new Date();
-                return (
-                  <div key={v._id} style={{ fontSize: '0.82rem' }}>
-                    <strong>{v.name}</strong>
-                    {v.administeredAt && <span style={{ color: '#64748b' }}> · {new Date(v.administeredAt).toLocaleDateString()}</span>}
-                    {overdue && <span style={{ color: '#991b1b', fontWeight: 700 }}> · OVERDUE</span>}
-                  </div>
-                );
-              })}
-              {vaccinations.length > 4 && (
-                <div style={{ fontSize: '0.74rem', color: '#94a3b8' }}>+{vaccinations.length - 4} more</div>
-              )}
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Recent prescriptions inline (for drug-interaction awareness) */}
-      {recentRx.length > 0 && (
-        <div style={{ padding: 12, borderRadius: 10, background: '#fff', border: '1px solid #e2e8f0' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
-            <Pill size={14} color="#0ea5e9" />
-            <strong style={{ fontSize: '0.82rem', color: '#0f172a' }}>Recent prescriptions</strong>
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-            {recentRx.map((p: any) => {
-              const m = Array.isArray(p.medications) && p.medications.length ? p.medications[0] : null;
-              const med = m?.medication || p.medication || '—';
-              const dose = m?.dosage || p.dosage;
-              return (
-                <div key={p._id} style={{ fontSize: '0.82rem' }}>
-                  <strong>{med}</strong>{dose ? ` — ${dose}` : ''}
-                  {p.issuedAt && <span style={{ color: '#94a3b8' }}> · {new Date(p.issuedAt).toLocaleDateString()}</span>}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
     </div>
   );
 }
