@@ -70,9 +70,21 @@ export default function RegisterPage() {
                 submitData = formData;
             }
 
-            await register({ ...submitData, role });
-            showToast('Account created! Please sign in.', 'success');
-            router.push('/login');
+            const result = await register({ ...submitData, role });
+            if (result.requiresApproval) {
+                // Doctors land here — they cannot log in yet. Make the wait
+                // expectations visible and route them to /login with a flag
+                // so the next attempt shows the same banner.
+                showToast(
+                    result.message
+                        || 'Registration received. An administrator will review your license — you will be notified by email once approved.',
+                    'info'
+                );
+                router.push('/login?pendingApproval=1');
+            } else {
+                showToast('Account created! Please sign in.', 'success');
+                router.push('/login');
+            }
         } catch (err: any) {
             showToast(err.message || 'Registration failed', 'error');
         } finally {
