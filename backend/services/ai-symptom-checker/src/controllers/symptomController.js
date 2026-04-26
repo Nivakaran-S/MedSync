@@ -26,13 +26,15 @@ const genAI = process.env.GEMINI_API_KEY
 
 // #18 Cheaper-model fallback chain — try Flash first for low-complexity inputs;
 // escalate to Pro if confidence is below threshold.
-// Model names — gemini-1.5-* was retired by Google in 2025, so default to
-// the current 2.5 family. Override via env if you need to pin a different
-// model (e.g. gemini-2.0-flash for cost, or gemini-2.5-pro for accuracy).
-const MODEL_PRO = process.env.GEMINI_MODEL_PRO || 'gemini-2.5-pro';
+// Model names — gemini-1.5-* was retired by Google in 2025, and gemini-2.5-pro
+// no longer ships with a free-tier quota (limit=0 on free accounts), so default
+// every variant to gemini-2.5-flash. Set GEMINI_MODEL_PRO to a Pro variant only
+// if you have a billed key; otherwise leave defaults.
+const MODEL_PRO = process.env.GEMINI_MODEL_PRO || 'gemini-2.5-flash';
 const MODEL_FLASH = process.env.GEMINI_MODEL_FLASH || 'gemini-2.5-flash';
-const MODEL_VISION = process.env.GEMINI_MODEL_VISION || 'gemini-2.5-pro';
+const MODEL_VISION = process.env.GEMINI_MODEL_VISION || 'gemini-2.5-flash';
 const FALLBACK_CONFIDENCE_THRESHOLD = Number(process.env.SYMPTOM_FLASH_ESCALATE_THRESHOLD) || 0.65;
+const isQuotaError = (err) => /429|quota|rate.?limit/i.test(err?.message || String(err));
 
 // ─── Local fallback knowledge base ────────────────────────────────────────────
 const symptomMappings = [
@@ -203,27 +205,36 @@ const describeLlmError = (err) => {
 };
 
 // #18 Run the LLM — Flash first, escalate to Pro if confidence is low.
+// Skip Pro entirely when it's the same as Flash (no point re-asking the same
+// model) or when Flash already failed on quota (Pro will hit the same wall).
 async function runLlmWithFallback(promptText) {
   if (!genAI) throw new Error('GEMINI_API_KEY not configured');
+  const proIsDistinct = MODEL_PRO !== MODEL_FLASH;
 
-  // First attempt: Flash (cheaper).
   try {
     const flash = genAI.getGenerativeModel({ model: MODEL_FLASH });
     const flashResult = await flash.generateContent(promptText);
     const parsed = JSON.parse(stripJSON(flashResult.response.text()));
     const confidence = typeof parsed.overallConfidence === 'number' ? parsed.overallConfidence : 0;
-    if (confidence >= FALLBACK_CONFIDENCE_THRESHOLD && parsed.overallUrgency !== 'emergency') {
+    if (!proIsDistinct || (confidence >= FALLBACK_CONFIDENCE_THRESHOLD && parsed.overallUrgency !== 'emergency')) {
       return { analysis: parsed, model: MODEL_FLASH, escalated: false };
     }
     // Low confidence or emergency-marked → re-ask Pro to confirm.
-    const pro = genAI.getGenerativeModel({ model: MODEL_PRO });
-    const proResult = await pro.generateContent(promptText);
-    const proParsed = JSON.parse(stripJSON(proResult.response.text()));
-    return { analysis: proParsed, model: MODEL_PRO, escalated: true };
+    try {
+      const pro = genAI.getGenerativeModel({ model: MODEL_PRO });
+      const proResult = await pro.generateContent(promptText);
+      const proParsed = JSON.parse(stripJSON(proResult.response.text()));
+      return { analysis: proParsed, model: MODEL_PRO, escalated: true };
+    } catch (proErr) {
+      // Pro escalation failed (often quota=0 on free tier). Keep Flash result.
+      console.warn(`[ai] Pro escalation failed, keeping Flash answer — ${describeLlmError(proErr)}`);
+      return { analysis: parsed, model: MODEL_FLASH, escalated: false };
+    }
   } catch (err) {
-    // If Flash itself fails, fall back to Pro directly. Surface the
-    // categorised reason so the next failure is debuggable.
-    console.warn(`[ai] Flash call failed, retrying with Pro — ${describeLlmError(err)}`);
+    // Flash itself failed. Only retry on Pro if Pro is a different model and
+    // the failure wasn't a quota error (which would hit the same ceiling).
+    console.warn(`[ai] Flash call failed — ${describeLlmError(err)}`);
+    if (!proIsDistinct || isQuotaError(err)) throw err;
     try {
       const pro = genAI.getGenerativeModel({ model: MODEL_PRO });
       const proResult = await pro.generateContent(promptText);
