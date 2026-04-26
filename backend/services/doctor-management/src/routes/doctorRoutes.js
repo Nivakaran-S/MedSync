@@ -50,6 +50,10 @@ router.post('/:id/availability/bulk', auth, doctorController.addAvailabilityBulk
 router.put('/:id/availability/:slotId', auth, doctorController.updateAvailability);
 router.delete('/:id/availability/:slotId', auth, doctorController.deleteAvailability);
 
+// Admin: license management
+router.get('/licenses/pending', auth, doctorController.listPendingLicenses);
+router.patch('/:id/license-status', auth, doctorController.updateLicenseStatus);
+
 // Admin: suspend or reactivate a doctor
 router.patch('/:id/status', auth, doctorController.suspendDoctor);
 

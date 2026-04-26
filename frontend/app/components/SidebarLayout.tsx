@@ -61,23 +61,27 @@ export function SidebarLayout({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     // PUBLIC ROUTES - Never redirect or check auth
-    if (isLoading || !showSidebar || pathname.startsWith('/verify')) return;
-
+    if (isLoading) return;
+    
+    // ALWAYS allow home page and public routes - no redirects
+    if (pathname === '/' || pathname === '/login' || pathname === '/register' || pathname.startsWith('/verify')) {
+      return;
+    }
+    
+    // For all other protected routes, check auth
     if (!user) {
       router.replace('/login');
       return;
     }
 
-    if (!user) return;
-
     const allowedPrefixesByRole: Record<string, string[]> = {
-      admin: ['/admin', '/notifications'],
-      doctor: ['/doctor', '/telemedicine', '/notifications'],
-      patient: ['/patient', '/appointment', '/symptom-checker', '/telemedicine', '/payment', '/notifications'],
+      admin: ['/admin', '/notifications', '/'],
+      doctor: ['/doctor', '/telemedicine', '/notifications', '/'],
+      patient: ['/patient', '/appointment', '/symptom-checker', '/telemedicine', '/payment', '/notifications', '/'],
     };
 
     const allowedPrefixes = allowedPrefixesByRole[user.role] || [];
-    const isAllowed = allowedPrefixes.some((prefix) => pathname.startsWith(prefix));
+    const isAllowed = allowedPrefixes.some((prefix) => pathname === prefix || pathname.startsWith(prefix));
 
     if (!isAllowed) {
       router.replace(user.role === 'admin' ? '/admin' : user.role === 'doctor' ? '/doctor' : '/patient');
@@ -98,7 +102,7 @@ export function SidebarLayout({ children }: { children: React.ReactNode }) {
       router.replace(user.role === 'admin' ? '/admin' : '/doctor');
       return;
     }
-  }, [isLoading, pathname, router, showSidebar, user]);
+  }, [isLoading, pathname, router, user]);
 
   const navItems = getNavItems(user?.role);
 

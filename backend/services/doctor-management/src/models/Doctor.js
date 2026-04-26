@@ -26,10 +26,12 @@ const doctorSchema = new mongoose.Schema(
     },
     password: { type: String, required: true },
     isVerified: { type: Boolean, default: false },
+    isLicenseApproved: { type: Boolean, default: false },
     isActive: { type: Boolean, default: true },
     consultationFee: { type: Number, default: 0, min: 0 },
     bio: String,
     photoUrl: String,
+    licenseImageUrl: String,
     availability: { type: [availabilitySlotSchema], default: [] },
     analytics: {
       averageConsultationDuration: { type: Number, default: 0 },

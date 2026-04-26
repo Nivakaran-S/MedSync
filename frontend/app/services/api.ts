@@ -68,8 +68,10 @@ export const patientApi = {
     return parseOrThrow(response, 'Failed to fetch profile');
   },
   updateProfile: async (data: any) => {
+    const isFormData = data instanceof FormData;
+    const headers = isFormData ? getAuthHeadersNoContentType() : getAuthHeaders();
     const response = await fetch(`${PATIENT_SERVICE_URL}/profile`, {
-      method: 'PUT', headers: getAuthHeaders(), body: JSON.stringify(data),
+      method: 'PUT', headers, body: isFormData ? data : JSON.stringify(data),
     });
     return parseOrThrow(response, 'Failed to update profile');
   },
@@ -396,6 +398,16 @@ export const doctorApi = {
       method: 'POST', headers: getAuthHeaders(), body: JSON.stringify(data),
     });
     return parseOrThrow(response, 'Failed to change password');
+  },
+  listPendingLicenses: async () => {
+    const response = await fetch(`${DOCTOR_SERVICE_URL}/licenses/pending`, { headers: getAuthHeaders() });
+    return parseOrThrow(response, 'Failed to list pending licenses');
+  },
+  updateLicenseStatus: async (id: string, isApproved: boolean) => {
+    const response = await fetch(`${DOCTOR_SERVICE_URL}/${id}/license-status`, {
+      method: 'PATCH', headers: getAuthHeaders(), body: JSON.stringify({ isApproved }),
+    });
+    return parseOrThrow(response, 'Failed to update license status');
   },
 };
 

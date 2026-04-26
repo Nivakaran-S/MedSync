@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { useAuth } from '../../context/AuthContext';
 import { doctorApi } from '../../services/api';
 import { ShieldBan, CheckCircle, RefreshCcw, UserCheck, Search, UserX, UserCheck2 } from 'lucide-react';
@@ -116,6 +117,7 @@ export default function AdminManageDoctors() {
                 <th style={{ padding: '16px', fontWeight: 600 }}>Name</th>
                 <th style={{ padding: '16px', fontWeight: 600 }}>Credentials</th>
                 <th style={{ padding: '16px', fontWeight: 600 }}>Email</th>
+                <th style={{ padding: '16px', fontWeight: 600 }}>License</th>
                 <th style={{ padding: '16px', fontWeight: 600 }}>Verification</th>
                 <th style={{ padding: '16px', fontWeight: 600 }}>Account</th>
                 <th style={{ padding: '16px', fontWeight: 600, textAlign: 'right' }}>Actions</th>
@@ -142,6 +144,22 @@ export default function AdminManageDoctors() {
                     </td>
                     <td style={{ padding: '16px', color: 'var(--text-secondary)' }}>
                       {doc.contact?.email}
+                    </td>
+                    <td style={{ padding: '16px' }}>
+                      {doc.licenseImageUrl ? (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                          <img
+                            src={doc.licenseImageUrl}
+                            alt={`License for ${doc.name}`}
+                            style={{ width: '96px', height: '64px', objectFit: 'cover', borderRadius: '8px', border: '1px solid var(--card-border)' }}
+                          />
+                          <Link href={`/admin/license-management/${doc._id}`} className="med-button secondary sm">
+                            View
+                          </Link>
+                        </div>
+                      ) : (
+                        <span style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>Not uploaded</span>
+                      )}
                     </td>
                     <td style={{ padding: '16px' }}>
                       <span className={`badge ${doc.isVerified ? 'low' : 'high'}`} style={{ display: 'flex', alignItems: 'center', gap: '4px', width: 'fit-content' }}>
