@@ -12,7 +12,6 @@ export default function ProfilePage() {
     dateOfBirth: '', gender: 'Other', address: '',
     bloodType: '', allergies: [], emergencyContact: { name: '', relationship: '', phone: '' }
   });
-  const [allergyInput, setAllergyInput] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
@@ -47,7 +46,11 @@ export default function ProfilePage() {
     setSaving(true);
     try {
       const formData = new FormData();
+      // Skip allergies — managed via /patient/health using the structured shape.
+      // Posting it from this form would overwrite the schema-correct array
+      // with a flattened FormData string.
       Object.keys(profile).forEach(key => {
+        if (key === 'allergies') return;
         if (profile[key] !== undefined && profile[key] !== null) {
           formData.append(key, profile[key]);
         }
@@ -63,17 +66,6 @@ export default function ProfilePage() {
     } finally {
       setSaving(false);
     }
-  };
-
-  const addAllergy = () => {
-    if (allergyInput.trim()) {
-      setProfile({ ...profile, allergies: [...profile.allergies, allergyInput.trim()] });
-      setAllergyInput('');
-    }
-  };
-
-  const removeAllergy = (index: number) => {
-    setProfile({ ...profile, allergies: profile.allergies.filter((_: any, i: number) => i !== index) });
   };
 
   if (loading) {
@@ -189,35 +181,34 @@ export default function ProfilePage() {
           />
         </Card>
 
-        {/* Allergies */}
+        {/* Allergies — managed in Health Profile so each entry has substance + severity */}
         <Card title="Allergies" icon="⚠️">
-          <div style={{ display: 'flex', gap: '10px', marginBottom: '16px' }}>
-            <input
-              className="med-input"
-              value={allergyInput}
-              onChange={(e) => setAllergyInput(e.target.value)}
-              placeholder="Enter an allergy (e.g., Penicillin)"
-              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addAllergy(); } }}
-            />
-            <Button onClick={addAllergy} variant="secondary">Add</Button>
-          </div>
-          <div className="chips-container">
-            {profile.allergies.length === 0 ? (
-              <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>No allergies recorded</p>
-            ) : (
-              profile.allergies.map((allergy: string, i: number) => (
-                <span
-                  key={i}
-                  className="symptom-chip selected"
-                  onClick={() => removeAllergy(i)}
-                  style={{ cursor: 'pointer' }}
-                  title="Click to remove"
-                >
-                  {allergy} ✕
-                </span>
-              ))
-            )}
-          </div>
+          {profile.allergies.length === 0 ? (
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>No allergies on file.</p>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {profile.allergies.map((a: any, i: number) => (
+                <div key={a._id || i} style={{ fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  <strong>{a.substance || (typeof a === 'string' ? a : '—')}</strong>
+                  {a.severity && (
+                    <span style={{
+                      fontSize: '0.7rem', fontWeight: 700, padding: '2px 8px', borderRadius: 999,
+                      background: ['severe', 'life-threatening'].includes(a.severity) ? '#fee2e2' : '#fef3c7',
+                      color: ['severe', 'life-threatening'].includes(a.severity) ? '#991b1b' : '#92400e',
+                      textTransform: 'uppercase', letterSpacing: 0.3,
+                    }}>
+                      {a.severity}
+                    </span>
+                  )}
+                  {a.reaction && <span style={{ color: 'var(--text-secondary)' }}>· {a.reaction}</span>}
+                </div>
+              ))}
+            </div>
+          )}
+          <p style={{ marginTop: 14, fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+            Allergies are managed in your <a href="/patient/health" style={{ color: '#0ea5e9', fontWeight: 600 }}>Health Profile</a>,
+            where you can record substance, severity, and reaction.
+          </p>
         </Card>
 
         {/* Emergency Contact */}
