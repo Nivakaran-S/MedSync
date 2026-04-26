@@ -43,8 +43,6 @@ interface PatientRecord {
   medicalHistory: Array<{ _id: string; description: string; diagnosis?: string; doctor?: string; notes?: string; date: string; source?: string; createdByName?: string }>;
   prescriptions: Array<{ _id: string; medication: string; dosage: string; frequency?: string; duration?: string; instructions?: string; prescribedBy?: string; date: string; source?: string; createdByName?: string; doctorName?: string }>;
   documents: Array<{ _id: string; fileName: string; fileUrl: string; type: string; uploadDate: string; source?: string; createdByName?: string }>;
-  vitalSigns?: Array<{ _id: string; recordedAt: string; bloodPressureSystolic?: number; bloodPressureDiastolic?: number; heartRateBpm?: number; temperatureC?: number; oxygenSaturation?: number; respiratoryRate?: number; bmi?: number; heightCm?: number; weightKg?: number; bloodGlucose?: number; notes?: string; recordedBy?: string }>;
-  vaccinations?: Array<{ _id: string; name: string; dose?: string; administeredAt?: string; administeredBy?: string; batchNumber?: string; nextDueDate?: string; notes?: string }>;
 }
 
 const STATUS_COLORS: Record<string, { bg: string; text: string }> = {
@@ -483,74 +481,6 @@ export default function DoctorAppointments() {
                       )}
                     </div>
                   ))}
-                </div>
-              )}
-            </section>
-
-            <section>
-              <h4 style={{ marginBottom: '8px', color: 'var(--primary-dark)' }}>Vitals ({(record.vitalSigns || []).length})</h4>
-              {(record.vitalSigns || []).length === 0 ? (
-                <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>No vitals recorded.</p>
-              ) : (
-                <div style={{ overflowX: 'auto', background: 'var(--bg-main)', borderRadius: 'var(--radius-sm)' }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
-                    <thead>
-                      <tr style={{ textAlign: 'left', borderBottom: '1px solid var(--card-border)' }}>
-                        <th style={{ padding: '8px 10px' }}>Recorded</th>
-                        <th style={{ padding: '8px 10px' }}>BP</th>
-                        <th style={{ padding: '8px 10px' }}>HR</th>
-                        <th style={{ padding: '8px 10px' }}>Temp</th>
-                        <th style={{ padding: '8px 10px' }}>SpO₂</th>
-                        <th style={{ padding: '8px 10px' }}>BMI</th>
-                        <th style={{ padding: '8px 10px' }}>Glucose</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {[...(record.vitalSigns || [])].sort((a, b) => +new Date(b.recordedAt) - +new Date(a.recordedAt)).map(v => (
-                        <tr key={v._id} style={{ borderBottom: '1px solid var(--card-border)' }}>
-                          <td style={{ padding: '8px 10px' }}>{new Date(v.recordedAt).toLocaleString()}</td>
-                          <td style={{ padding: '8px 10px' }}>{v.bloodPressureSystolic ? `${v.bloodPressureSystolic}/${v.bloodPressureDiastolic ?? '—'}` : '—'}</td>
-                          <td style={{ padding: '8px 10px' }}>{v.heartRateBpm ?? '—'}</td>
-                          <td style={{ padding: '8px 10px' }}>{v.temperatureC ? `${v.temperatureC}°C` : '—'}</td>
-                          <td style={{ padding: '8px 10px' }}>{v.oxygenSaturation ? `${v.oxygenSaturation}%` : '—'}</td>
-                          <td style={{ padding: '8px 10px' }}>{v.bmi ?? '—'}</td>
-                          <td style={{ padding: '8px 10px' }}>{v.bloodGlucose ?? '—'}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </section>
-
-            <section>
-              <h4 style={{ marginBottom: '8px', color: 'var(--primary-dark)' }}>Vaccinations ({(record.vaccinations || []).length})</h4>
-              {(record.vaccinations || []).length === 0 ? (
-                <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>No vaccinations on file.</p>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  {(record.vaccinations || []).map(vac => {
-                    const overdue = vac.nextDueDate && new Date(vac.nextDueDate) < new Date();
-                    return (
-                      <div key={vac._id} style={{ padding: '10px 12px', background: 'var(--bg-main)', borderRadius: 'var(--radius-sm)', fontSize: '0.88rem' }}>
-                        <div>
-                          <strong>{vac.name}</strong>{vac.dose ? ` · ${vac.dose}` : ''}
-                          {overdue && <span style={{ marginLeft: 8, fontSize: '0.7rem', fontWeight: 700, padding: '2px 8px', borderRadius: 999, background: '#fee2e2', color: '#991b1b', textTransform: 'uppercase', letterSpacing: 0.3 }}>OVERDUE</span>}
-                        </div>
-                        <div style={{ color: 'var(--text-secondary)' }}>
-                          {vac.administeredAt ? `Given ${new Date(vac.administeredAt).toLocaleDateString()}` : 'Date unknown'}
-                          {vac.administeredBy ? ` · ${vac.administeredBy}` : ''}
-                          {vac.batchNumber ? ` · batch ${vac.batchNumber}` : ''}
-                        </div>
-                        {vac.nextDueDate && (
-                          <div style={{ color: overdue ? '#991b1b' : 'var(--text-muted)', fontSize: '0.82rem' }}>
-                            Next due: {new Date(vac.nextDueDate).toLocaleDateString()}
-                          </div>
-                        )}
-                        {vac.notes && <div style={{ fontStyle: 'italic', color: 'var(--text-secondary)' }}>{vac.notes}</div>}
-                      </div>
-                    );
-                  })}
                 </div>
               )}
             </section>

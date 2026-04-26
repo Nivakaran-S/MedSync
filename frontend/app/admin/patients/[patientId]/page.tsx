@@ -85,7 +85,7 @@ export default function AdminPatientDetailPage({ params }: { params: Promise<{ p
       </div>
 
       <Tabs
-        tabs={['Overview', 'History & Prescriptions', 'Documents', 'Vitals & Vaccinations', 'Audit Log']}
+        tabs={['Overview', 'History & Prescriptions', 'Documents', 'Audit Log']}
         activeTab={activeTab}
         onChange={setActiveTab}
       />
@@ -225,78 +225,6 @@ export default function AdminPatientDetailPage({ params }: { params: Promise<{ p
         )}
 
         {activeTab === 3 && (
-          <div className="grid-2" style={{ gap: '16px' }}>
-            <Card title={`Vital Signs (${(full.vitalSigns || []).length})`} icon={<Activity size={20} />}>
-              {(full.vitalSigns || []).length === 0 ? (
-                <p style={{ color: 'var(--text-muted)' }}>No vitals recorded.</p>
-              ) : (
-                <div style={{ overflowX: 'auto' }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
-                    <thead style={{ background: '#f8fafc' }}>
-                      <tr style={{ borderBottom: '2px solid var(--card-border)', textAlign: 'left' }}>
-                        <th style={{ padding: '10px 12px' }}>Recorded</th>
-                        <th style={{ padding: '10px 12px' }}>BP</th>
-                        <th style={{ padding: '10px 12px' }}>HR</th>
-                        <th style={{ padding: '10px 12px' }}>Temp</th>
-                        <th style={{ padding: '10px 12px' }}>SpO₂</th>
-                        <th style={{ padding: '10px 12px' }}>BMI</th>
-                        <th style={{ padding: '10px 12px' }}>Glucose</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {[...(full.vitalSigns || [])]
-                        .sort((a: any, b: any) => +new Date(b.recordedAt) - +new Date(a.recordedAt))
-                        .map((v: any) => (
-                          <tr key={v._id} style={{ borderBottom: '1px solid var(--card-border)' }}>
-                            <td style={{ padding: '10px 12px', color: 'var(--text-secondary)' }}>{new Date(v.recordedAt).toLocaleString()}</td>
-                            <td style={{ padding: '10px 12px' }}>{v.bloodPressureSystolic ? `${v.bloodPressureSystolic}/${v.bloodPressureDiastolic ?? '—'}` : '—'}</td>
-                            <td style={{ padding: '10px 12px' }}>{v.heartRateBpm ?? '—'}</td>
-                            <td style={{ padding: '10px 12px' }}>{v.temperatureC ? `${v.temperatureC}°C` : '—'}</td>
-                            <td style={{ padding: '10px 12px' }}>{v.oxygenSaturation ? `${v.oxygenSaturation}%` : '—'}</td>
-                            <td style={{ padding: '10px 12px' }}>{v.bmi ?? '—'}</td>
-                            <td style={{ padding: '10px 12px' }}>{v.bloodGlucose ?? '—'}</td>
-                          </tr>
-                        ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </Card>
-
-            <Card title={`Vaccinations (${(full.vaccinations || []).length})`} icon={<Activity size={20} />}>
-              {(full.vaccinations || []).length === 0 ? (
-                <p style={{ color: 'var(--text-muted)' }}>No vaccinations recorded.</p>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  {(full.vaccinations || []).map((vac: any) => {
-                    const overdue = vac.nextDueDate && new Date(vac.nextDueDate) < new Date();
-                    return (
-                      <div key={vac._id} className="history-item">
-                        <div style={{ fontSize: '0.9rem' }}>
-                          <strong>{vac.name}</strong>{vac.dose ? ` · ${vac.dose}` : ''}
-                          {overdue && <Badge text="OVERDUE" variant="high" />}
-                        </div>
-                        <div style={{ fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
-                          {vac.administeredAt ? `Given ${new Date(vac.administeredAt).toLocaleDateString()}` : 'Date unknown'}
-                          {vac.administeredBy ? ` · ${vac.administeredBy}` : ''}
-                          {vac.batchNumber ? ` · batch ${vac.batchNumber}` : ''}
-                        </div>
-                        {vac.nextDueDate && (
-                          <div style={{ fontSize: '0.8rem', color: overdue ? '#991b1b' : 'var(--text-muted)' }}>
-                            Next due: {new Date(vac.nextDueDate).toLocaleDateString()}
-                          </div>
-                        )}
-                        {vac.notes && <div style={{ fontSize: '0.8rem', fontStyle: 'italic', color: 'var(--text-secondary)' }}>{vac.notes}</div>}
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </Card>
-          </div>
-        )}
-
-        {activeTab === 4 && (
           <Card title={`Audit Log (${auditLog.length})`} icon={<Clock size={20} />}>
             {auditLog.length === 0 ? (
               <p style={{ color: 'var(--text-muted)' }}>No audit entries.</p>
