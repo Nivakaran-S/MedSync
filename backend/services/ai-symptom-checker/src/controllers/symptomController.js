@@ -26,9 +26,12 @@ const genAI = process.env.GEMINI_API_KEY
 
 // #18 Cheaper-model fallback chain — try Flash first for low-complexity inputs;
 // escalate to Pro if confidence is below threshold.
-const MODEL_PRO = 'gemini-1.5-pro';
-const MODEL_FLASH = 'gemini-1.5-flash';
-const MODEL_VISION = 'gemini-1.5-pro';
+// Model names — gemini-1.5-* was retired by Google in 2025, so default to
+// the current 2.5 family. Override via env if you need to pin a different
+// model (e.g. gemini-2.0-flash for cost, or gemini-2.5-pro for accuracy).
+const MODEL_PRO = process.env.GEMINI_MODEL_PRO || 'gemini-2.5-pro';
+const MODEL_FLASH = process.env.GEMINI_MODEL_FLASH || 'gemini-2.5-flash';
+const MODEL_VISION = process.env.GEMINI_MODEL_VISION || 'gemini-2.5-pro';
 const FALLBACK_CONFIDENCE_THRESHOLD = Number(process.env.SYMPTOM_FLASH_ESCALATE_THRESHOLD) || 0.65;
 
 // ─── Local fallback knowledge base ────────────────────────────────────────────
@@ -148,6 +151,23 @@ const fallbackAnalyse = (input) => {
   };
 };
 
+// Categorise SDK errors so logs surface the actual root cause. Common shapes:
+//  - "fetch failed" → network/DNS/firewall (most likely model retired or
+//    container can't reach generativelanguage.googleapis.com)
+//  - "API key not valid" → bad GEMINI_API_KEY
+//  - "404 ... model not found" → wrong model name (e.g. retired gemini-1.5-*)
+//  - "429" → quota / rate limit
+const describeLlmError = (err) => {
+  const msg = err?.message || String(err);
+  if (/fetch failed|ENOTFOUND|EAI_AGAIN|ECONNREFUSED/.test(msg)) {
+    return `network: ${msg} (check DNS, firewall, and that the model name "${MODEL_PRO}/${MODEL_FLASH}" still exists — gemini-1.5-* was retired in 2025)`;
+  }
+  if (/api key not valid|401/i.test(msg)) return `auth: ${msg} (GEMINI_API_KEY rejected)`;
+  if (/404|not.?found/i.test(msg)) return `model: ${msg} (set GEMINI_MODEL_PRO/GEMINI_MODEL_FLASH env to a current model name)`;
+  if (/429|quota|rate/i.test(msg)) return `quota: ${msg} (Gemini quota exhausted)`;
+  return msg;
+};
+
 // #18 Run the LLM — Flash first, escalate to Pro if confidence is low.
 async function runLlmWithFallback(promptText) {
   if (!genAI) throw new Error('GEMINI_API_KEY not configured');
@@ -167,12 +187,18 @@ async function runLlmWithFallback(promptText) {
     const proParsed = JSON.parse(stripJSON(proResult.response.text()));
     return { analysis: proParsed, model: MODEL_PRO, escalated: true };
   } catch (err) {
-    // If Flash itself fails, fall back to Pro directly.
-    console.warn('[ai] Flash call failed, retrying with Pro:', err.message);
-    const pro = genAI.getGenerativeModel({ model: MODEL_PRO });
-    const proResult = await pro.generateContent(promptText);
-    const proParsed = JSON.parse(stripJSON(proResult.response.text()));
-    return { analysis: proParsed, model: MODEL_PRO, escalated: false };
+    // If Flash itself fails, fall back to Pro directly. Surface the
+    // categorised reason so the next failure is debuggable.
+    console.warn(`[ai] Flash call failed, retrying with Pro — ${describeLlmError(err)}`);
+    try {
+      const pro = genAI.getGenerativeModel({ model: MODEL_PRO });
+      const proResult = await pro.generateContent(promptText);
+      const proParsed = JSON.parse(stripJSON(proResult.response.text()));
+      return { analysis: proParsed, model: MODEL_PRO, escalated: false };
+    } catch (proErr) {
+      console.error(`[ai] Pro call also failed — ${describeLlmError(proErr)}`);
+      throw proErr;
+    }
   }
 }
 
