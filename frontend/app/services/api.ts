@@ -464,7 +464,10 @@ export interface SymptomAnalyzePayload {
   bodyLocation?: string;
   additionalContext?: string;
   patientId?: string;
+  language?: string;
 }
+
+export type SymptomImageKind = 'skin' | 'rash' | 'wound' | 'lab-report' | 'xray' | 'ecg' | 'other';
 
 export const symptomApi = {
   analyzeSymptoms: async (payload: string | SymptomAnalyzePayload, patientId?: string) => {
@@ -540,6 +543,62 @@ export const symptomApi = {
       method: 'POST', headers: getAuthHeaders(), body: JSON.stringify(data),
     });
     return parseOrThrow(response, 'Failed to submit feedback');
+  },
+
+  // #15 Bulk delete
+  bulkDeleteChecks: async (ids: string[]) => {
+    const response = await fetch(`${SYMPTOM_CHECKER_URL}/checks/bulk-delete`, {
+      method: 'POST', headers: getAuthHeaders(), body: JSON.stringify({ ids }),
+    });
+    return parseOrThrow(response, 'Failed to bulk-delete checks');
+  },
+
+  // #14 PDF export — triggers a browser download
+  downloadCheckPdf: async (id: string) => {
+    const response = await fetch(`${SYMPTOM_CHECKER_URL}/checks/${id}/export/pdf`, { headers: getAuthHeaders() });
+    if (!response.ok) {
+      let message = 'Failed to download PDF';
+      try { const e = await response.json(); if (e?.message) message = e.message; } catch { /* */ }
+      throw new Error(message);
+    }
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `medsync-symptom-check-${id}.pdf`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.URL.revokeObjectURL(url);
+  },
+
+  // #8 AI narrative summary (24h cached server-side)
+  getNarrative: async (data: { patientId?: string; language?: string; refresh?: boolean } = {}) => {
+    const qs = data.refresh ? '?refresh=true' : '';
+    const response = await fetch(`${SYMPTOM_CHECKER_URL}/narrative${qs}`, {
+      method: 'POST', headers: getAuthHeaders(), body: JSON.stringify({
+        patientId: data.patientId, language: data.language || 'en',
+      }),
+    });
+    return parseOrThrow(response, 'Failed to get narrative');
+  },
+
+  // #16 Admin prompt management
+  listPrompts: async () => {
+    const response = await fetch(`${SYMPTOM_CHECKER_URL}/admin/prompts`, { headers: getAuthHeaders() });
+    return parseOrThrow(response, 'Failed to list prompts');
+  },
+  createPrompt: async (data: { name: 'triage'|'image'|'narrative'|'conversation'; template: string; description?: string; activate?: boolean }) => {
+    const response = await fetch(`${SYMPTOM_CHECKER_URL}/admin/prompts`, {
+      method: 'POST', headers: getAuthHeaders(), body: JSON.stringify(data),
+    });
+    return parseOrThrow(response, 'Failed to create prompt');
+  },
+  activatePrompt: async (id: string) => {
+    const response = await fetch(`${SYMPTOM_CHECKER_URL}/admin/prompts/${id}/activate`, {
+      method: 'POST', headers: getAuthHeaders(),
+    });
+    return parseOrThrow(response, 'Failed to activate prompt');
   },
 };
 

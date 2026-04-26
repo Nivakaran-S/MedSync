@@ -8,7 +8,8 @@ import { useAuth } from '../context/AuthContext';
 import {
   Stethoscope, Hourglass, Search, Brain, AlertTriangle, FileText, Camera,
   MessageCircle, Send, ImagePlus, Pill, ShieldAlert, UserCheck, X, Trash2,
-  ThumbsUp, ThumbsDown, AlertCircle,
+  ThumbsUp, ThumbsDown, AlertCircle, Mic, Square, Download, Languages,
+  TrendingUp, TrendingDown, Activity, FileImage, FileBarChart,
 } from 'lucide-react';
 
 const commonSymptoms = [
@@ -24,6 +25,8 @@ interface Disclaimer {
   text: string;
 }
 
+interface ICD10Code { code: string; description: string }
+
 interface AnalyzeResult {
   results: Array<{
     specialty: string;
@@ -31,6 +34,8 @@ interface AnalyzeResult {
     urgency: string;
     matchedKeywords?: string[];
     confidence?: number;
+    icd10Codes?: ICD10Code[];
+    demographicNote?: string;
   }>;
   overallUrgency: string;
   overallConfidence?: number;
@@ -38,6 +43,12 @@ interface AnalyzeResult {
   aiSummary?: string;
   drugInteractionWarnings?: string[];
   allergyWarnings?: string[];
+  possibleDrugSideEffects?: Array<{ drug: string; symptomMatch: string; note: string; advice: string }>;
+  redFlags?: Array<{ code: string; label: string; advice: string }>;
+  urgencyOverrideReason?: string | null;
+  impliedSeverity?: string;
+  severityMismatchNote?: string | null;
+  progression?: { trend: string; explanation?: string; referenceCheckIds?: string[] } | null;
   recommendedDoctors?: Array<{
     doctorId: string;
     name: string;
@@ -47,10 +58,15 @@ interface AnalyzeResult {
   }>;
   contextUsed?: boolean;
   visibleFindings?: string[];
+  extractedValues?: Array<{ label: string; value: string; isAbnormal?: boolean }>;
+  imageKind?: string;
   disclaimer?: string;
   disclaimers?: Disclaimer[];
   sourceModel?: string;
+  promptVersion?: string;
+  cacheHit?: boolean;
   followUpAt?: string | null;
+  language?: string;
   checkId?: string;
 }
 
@@ -74,13 +90,19 @@ export default function SymptomCheckerPage() {
   const [durationDays, setDurationDays] = useState<string>('');
   const [bodyLocation, setBodyLocation] = useState('');
   const [additionalContext, setAdditionalContext] = useState('');
+  const [language, setLanguage] = useState<string>('en');
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<AnalyzeResult | null>(null);
+
+  // ── Voice input (#10) ──
+  const [recording, setRecording] = useState(false);
+  const recognitionRef = useRef<any>(null);
 
   // ── Image analysis state ──
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [imageDescription, setImageDescription] = useState('');
+  const [imageKind, setImageKind] = useState<'skin' | 'rash' | 'wound' | 'lab-report' | 'xray' | 'ecg' | 'other'>('skin');
   const [imageLoading, setImageLoading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -93,6 +115,30 @@ export default function SymptomCheckerPage() {
   // ── History state ──
   const [history, setHistory] = useState<any[]>([]);
   const [historyTotal, setHistoryTotal] = useState(0);
+  const [selectedHistory, setSelectedHistory] = useState<Set<string>>(new Set());
+
+  const toggleHistorySelection = (id: string) => {
+    setSelectedHistory((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const bulkDeleteSelected = async () => {
+    const ids = Array.from(selectedHistory);
+    if (ids.length === 0) return;
+    if (!confirm(`Delete ${ids.length} symptom check${ids.length === 1 ? '' : 's'}? This cannot be undone.`)) return;
+    try {
+      const res = await symptomApi.bulkDeleteChecks(ids);
+      setHistory((prev) => prev.filter((h) => !selectedHistory.has(h._id)));
+      setHistoryTotal((prev) => Math.max(0, prev - (res.deleted || ids.length)));
+      setSelectedHistory(new Set());
+      showToast(`Deleted ${res.deleted || ids.length} check${(res.deleted || ids.length) === 1 ? '' : 's'}`, 'success');
+    } catch (err: unknown) {
+      showToast(err instanceof Error ? err.message : 'Bulk delete failed', 'error');
+    }
+  };
 
   useEffect(() => {
     if (user?.id) fetchHistory();
@@ -128,6 +174,7 @@ export default function SymptomCheckerPage() {
         durationDays: durationDays ? Number(durationDays) : undefined,
         bodyLocation: bodyLocation || undefined,
         additionalContext: additionalContext || undefined,
+        language,
       });
       setResult(data);
       fetchHistory();
@@ -146,6 +193,46 @@ export default function SymptomCheckerPage() {
     setBodyLocation('');
     setAdditionalContext('');
     setResult(null);
+  };
+
+  // ── #10 Voice input via Web Speech API ──
+  const supportsVoice = typeof window !== 'undefined'
+    && (window as any).SpeechRecognition || (typeof window !== 'undefined' && (window as any).webkitSpeechRecognition);
+
+  const startVoice = () => {
+    if (typeof window === 'undefined') return;
+    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SR) {
+      showToast('Voice input is not supported in this browser. Try Chrome.', 'warning');
+      return;
+    }
+    const rec = new SR();
+    rec.continuous = false;
+    rec.interimResults = false;
+    rec.lang = language === 'en' ? 'en-US' : language;
+    rec.onresult = (e: any) => {
+      const transcript = Array.from(e.results)
+        .map((r: any) => r[0]?.transcript || '')
+        .join(' ')
+        .trim();
+      if (transcript) {
+        setSymptoms((prev) => (prev ? `${prev} ${transcript}` : transcript));
+      }
+    };
+    rec.onerror = (e: any) => {
+      console.warn('voice error', e);
+      showToast('Voice input failed', 'error');
+      setRecording(false);
+    };
+    rec.onend = () => setRecording(false);
+    recognitionRef.current = rec;
+    rec.start();
+    setRecording(true);
+  };
+
+  const stopVoice = () => {
+    try { recognitionRef.current?.stop(); } catch { /* */ }
+    setRecording(false);
   };
 
   // ── Image handlers ──
@@ -176,6 +263,8 @@ export default function SymptomCheckerPage() {
       const fd = new FormData();
       fd.append('image', imageFile);
       if (imageDescription) fd.append('description', imageDescription);
+      fd.append('imageKind', imageKind);
+      fd.append('language', language);
       const data = await symptomApi.analyzeImage(fd);
       setResult(data);
       fetchHistory();
@@ -273,7 +362,31 @@ export default function SymptomCheckerPage() {
                 </div>
 
                 <div className="med-input-group">
-                  <label className="med-label">Describe your symptoms</label>
+                  <label className="med-label" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                    <span>Describe your symptoms</span>
+                    {supportsVoice && (
+                      <button
+                        type="button"
+                        onClick={recording ? stopVoice : startVoice}
+                        title={recording ? 'Stop recording' : 'Speak your symptoms'}
+                        style={{
+                          background: recording ? '#ef4444' : 'transparent',
+                          color: recording ? '#fff' : 'var(--text-secondary)',
+                          border: '1px solid var(--card-border)',
+                          borderRadius: 6,
+                          padding: '4px 10px',
+                          cursor: 'pointer',
+                          display: 'inline-flex',
+                          gap: 6,
+                          alignItems: 'center',
+                          fontSize: '0.85rem',
+                        }}
+                      >
+                        {recording ? <Square size={14} /> : <Mic size={14} />}
+                        {recording ? 'Stop' : 'Voice'}
+                      </button>
+                    )}
+                  </label>
                   <textarea
                     className="med-input"
                     value={symptoms}
@@ -313,6 +426,21 @@ export default function SymptomCheckerPage() {
                       onChange={(e) => setBodyLocation(e.target.value)}
                       placeholder="e.g. lower back"
                     />
+                  </div>
+                  <div className="med-input-group">
+                    <label className="med-label" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <Languages size={14} /> Language
+                    </label>
+                    <select className="med-input" value={language} onChange={(e) => setLanguage(e.target.value)}>
+                      <option value="en">English</option>
+                      <option value="si">Sinhala (සිංහල)</option>
+                      <option value="ta">Tamil (தமிழ்)</option>
+                      <option value="es">Spanish (Español)</option>
+                      <option value="fr">French (Français)</option>
+                      <option value="ar">Arabic (العربية)</option>
+                      <option value="hi">Hindi (हिन्दी)</option>
+                      <option value="zh">Chinese (中文)</option>
+                    </select>
                   </div>
                 </div>
 
@@ -396,6 +524,51 @@ export default function SymptomCheckerPage() {
                   >
                     <X size={16} />
                   </button>
+                </div>
+              )}
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 16 }}>
+                <div className="med-input-group" style={{ margin: 0 }}>
+                  <label className="med-label">What kind of image?</label>
+                  <select
+                    className="med-input"
+                    value={imageKind}
+                    onChange={(e) => setImageKind(e.target.value as any)}
+                  >
+                    <option value="skin">Skin / general photo</option>
+                    <option value="rash">Rash</option>
+                    <option value="wound">Wound</option>
+                    <option value="lab-report">Lab report (paper)</option>
+                    <option value="xray">X-ray (preliminary scan only)</option>
+                    <option value="ecg">ECG (preliminary scan only)</option>
+                    <option value="other">Other</option>
+                  </select>
+                </div>
+                <div className="med-input-group" style={{ margin: 0 }}>
+                  <label className="med-label" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <Languages size={14} /> Language
+                  </label>
+                  <select className="med-input" value={language} onChange={(e) => setLanguage(e.target.value)}>
+                    <option value="en">English</option>
+                    <option value="si">Sinhala</option>
+                    <option value="ta">Tamil</option>
+                    <option value="es">Spanish</option>
+                    <option value="fr">French</option>
+                    <option value="ar">Arabic</option>
+                    <option value="hi">Hindi</option>
+                    <option value="zh">Chinese</option>
+                  </select>
+                </div>
+              </div>
+
+              {(imageKind === 'xray' || imageKind === 'ecg') && (
+                <div style={{
+                  marginTop: 12, padding: '10px 12px',
+                  background: '#fee2e2', border: '1px solid #fca5a5', borderRadius: 8,
+                  color: '#7f1d1d', fontSize: '0.85rem',
+                }}>
+                  <strong>⚠ Preliminary visual scan only.</strong> AI vision is NOT a {imageKind.toUpperCase()} interpretation.
+                  A qualified specialist must review the actual {imageKind === 'xray' ? 'imaging study' : 'tracing'} before any clinical decision.
                 </div>
               )}
 
@@ -501,6 +674,23 @@ export default function SymptomCheckerPage() {
         {/* ─── TAB 3: History ────────────────────────────────────────────── */}
         {activeTab === 3 && (
           <Card title={`Past Symptom Checks (${historyTotal})`} icon={<FileText size={20} />}>
+            {selectedHistory.size > 0 && (
+              <div style={{
+                marginBottom: 12, padding: '8px 12px',
+                background: '#eff6ff', border: '1px solid #bfdbfe',
+                borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              }}>
+                <span style={{ fontSize: '0.9rem', color: '#1e40af' }}>
+                  {selectedHistory.size} selected
+                </span>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button onClick={() => setSelectedHistory(new Set())} className="med-button secondary sm">Clear</button>
+                  <button onClick={bulkDeleteSelected} className="med-button danger sm" style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}>
+                    <Trash2 size={14} /> Delete selected
+                  </button>
+                </div>
+              </div>
+            )}
             {history.length === 0 ? (
               <div className="empty-state">
                 <div className="empty-icon"><FileText size={36} /></div>
@@ -512,11 +702,33 @@ export default function SymptomCheckerPage() {
                 {history.map((item: any) => (
                   <div key={item._id} className="history-item">
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px', gap: '8px' }}>
-                      <Badge text={(item.overallUrgency || 'low').toUpperCase()} variant={urgencyVariant(item.overallUrgency)} />
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <input
+                          type="checkbox"
+                          checked={selectedHistory.has(item._id)}
+                          onChange={() => toggleHistorySelection(item._id)}
+                          aria-label="Select check"
+                        />
+                        <Badge text={(item.overallUrgency || 'low').toUpperCase()} variant={urgencyVariant(item.overallUrgency)} />
+                      </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                         <small style={{ color: 'var(--text-muted)' }}>
                           {new Date(item.timestamp || item.createdAt).toLocaleString()}
                         </small>
+                        <button
+                          onClick={async () => {
+                            try { await symptomApi.downloadCheckPdf(item._id); }
+                            catch (err: unknown) { showToast(err instanceof Error ? err.message : 'PDF failed', 'error'); }
+                          }}
+                          title="Download PDF report"
+                          style={{
+                            background: 'transparent', border: '1px solid var(--card-border)',
+                            borderRadius: '6px', padding: '4px 6px', cursor: 'pointer',
+                            color: 'var(--text-secondary)', display: 'flex', alignItems: 'center',
+                          }}
+                        >
+                          <Download size={14} />
+                        </button>
                         <button
                           onClick={async () => {
                             if (!confirm('Delete this symptom check?')) return;
@@ -626,6 +838,109 @@ function ResultPanel({ result }: { result: AnalyzeResult }) {
         )}
       </div>
 
+      {/* #1 Red flags — top of result panel for max visibility */}
+      {result.redFlags && result.redFlags.length > 0 && (
+        <div style={{
+          padding: '14px', borderRadius: 'var(--radius-md)',
+          background: '#fee2e2', color: '#7f1d1d', border: '2px solid #ef4444',
+          marginBottom: '14px',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, fontWeight: 800 }}>
+            <AlertTriangle size={20} /> Red flag{result.redFlags.length > 1 ? 's' : ''} detected
+          </div>
+          <ul style={{ margin: 0, paddingLeft: 20 }}>
+            {result.redFlags.map((r, i) => (
+              <li key={i} style={{ marginBottom: 4 }}>
+                <strong>{r.label}</strong> — {r.advice}
+              </li>
+            ))}
+          </ul>
+          {result.urgencyOverrideReason && (
+            <p style={{ margin: '8px 0 0', fontSize: '0.82rem', fontStyle: 'italic' }}>
+              {result.urgencyOverrideReason}
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* #3 Severity mismatch */}
+      {result.severityMismatchNote && (
+        <div style={{
+          padding: '10px 12px', borderRadius: 'var(--radius-sm)',
+          background: '#fff7ed', color: '#9a3412', border: '1px solid #fed7aa',
+          marginBottom: '12px', fontSize: '0.88rem',
+        }}>
+          <strong>Severity check:</strong> {result.severityMismatchNote}
+        </div>
+      )}
+
+      {/* #5 Possible drug side effects */}
+      {result.possibleDrugSideEffects && result.possibleDrugSideEffects.length > 0 && (
+        <div style={{
+          padding: '12px 14px', borderRadius: 'var(--radius-md)',
+          background: '#fef9c3', color: '#854d0e', border: '1px solid #fde047',
+          marginBottom: '14px',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, fontWeight: 700 }}>
+            <Pill size={16} /> Possible medication side effects
+          </div>
+          <ul style={{ margin: 0, paddingLeft: 20, fontSize: '0.88rem' }}>
+            {result.possibleDrugSideEffects.map((s, i) => (
+              <li key={i} style={{ marginBottom: 4 }}>
+                <strong>{s.drug}</strong>: {s.note}{' '}
+                <em>({s.advice})</em>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* #6 Symptom progression */}
+      {result.progression && result.progression.trend !== 'unknown' && (
+        <div style={{
+          padding: '10px 12px', borderRadius: 'var(--radius-sm)',
+          background: result.progression.trend === 'worsening' ? '#fef2f2' : '#f0fdf4',
+          color: result.progression.trend === 'worsening' ? '#991b1b' : '#166534',
+          border: `1px solid ${result.progression.trend === 'worsening' ? '#fecaca' : '#bbf7d0'}`,
+          marginBottom: '12px', fontSize: '0.88rem',
+          display: 'flex', alignItems: 'flex-start', gap: 10,
+        }}>
+          {result.progression.trend === 'worsening' ? <TrendingUp size={18} /> :
+            result.progression.trend === 'improving' ? <TrendingDown size={18} /> :
+            <Activity size={18} />}
+          <div>
+            <strong style={{ textTransform: 'capitalize' }}>Trend: {result.progression.trend}</strong>
+            {result.progression.explanation && <span> — {result.progression.explanation}</span>}
+          </div>
+        </div>
+      )}
+
+      {/* #11 Image-kind extracted lab values */}
+      {result.extractedValues && result.extractedValues.length > 0 && (
+        <div style={{
+          padding: '12px 14px', borderRadius: 'var(--radius-md)',
+          background: '#eff6ff', color: '#1e40af', border: '1px solid #bfdbfe',
+          marginBottom: '14px',
+        }}>
+          <div style={{ fontWeight: 700, marginBottom: 6, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <FileBarChart size={16} /> Extracted lab values (AI-read)
+          </div>
+          <table style={{ width: '100%', fontSize: '0.85rem' }}>
+            <tbody>
+              {result.extractedValues.map((v, i) => (
+                <tr key={i} style={{ borderBottom: '1px solid #dbeafe' }}>
+                  <td style={{ padding: '4px 6px' }}>{v.label}</td>
+                  <td style={{ padding: '4px 6px', fontWeight: 600 }}>{v.value}</td>
+                  <td style={{ padding: '4px 6px', textAlign: 'right' }}>
+                    {v.isAbnormal && <Badge text="ABNORMAL" variant="high" />}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
       {result.allergyWarnings && result.allergyWarnings.length > 0 && (
         <div style={{
           padding: '12px 14px', borderRadius: 'var(--radius-md)',
@@ -686,6 +1001,13 @@ function ResultPanel({ result }: { result: AnalyzeResult }) {
             </div>
           </div>
           <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', lineHeight: 1.6 }}>{item.suggestions}</p>
+          {/* #2 Demographic note */}
+          {item.demographicNote && (
+            <p style={{ marginTop: 6, fontSize: '0.82rem', color: '#475569', fontStyle: 'italic' }}>
+              <UserCheck size={12} style={{ verticalAlign: 'middle', marginRight: 4 }} />
+              {item.demographicNote}
+            </p>
+          )}
           {item.matchedKeywords && item.matchedKeywords.length > 0 && (
             <div style={{ marginTop: '8px', display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
               {item.matchedKeywords.map((kw, i) => (
@@ -694,6 +1016,24 @@ function ResultPanel({ result }: { result: AnalyzeResult }) {
                   background: 'rgba(0,0,0,0.05)', color: 'var(--text-secondary)',
                 }}>
                   {kw}
+                </span>
+              ))}
+            </div>
+          )}
+          {/* #13 ICD-10 codes */}
+          {item.icd10Codes && item.icd10Codes.length > 0 && (
+            <div style={{ marginTop: 8, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              {item.icd10Codes.map((c, i) => (
+                <span
+                  key={i}
+                  title={c.description}
+                  style={{
+                    padding: '3px 8px', fontSize: '0.7rem', borderRadius: 6,
+                    background: '#e0e7ff', color: '#3730a3', fontWeight: 600,
+                    fontFamily: 'monospace',
+                  }}
+                >
+                  ICD-10 {c.code}
                 </span>
               ))}
             </div>
@@ -707,29 +1047,56 @@ function ResultPanel({ result }: { result: AnalyzeResult }) {
             Suggested doctors near you
           </h3>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            {result.recommendedDoctors.map((d) => (
-              <div key={d.doctorId} style={{
-                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                padding: '12px 14px', background: 'var(--bg-main)',
-                borderRadius: 'var(--radius-md)', flexWrap: 'wrap', gap: '10px',
-              }}>
-                <div>
-                  <div style={{ fontWeight: 700 }}>{d.name}</div>
-                  <div style={{ fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
-                    {d.specialty} · {d.consultationFee ? `LKR ${d.consultationFee}` : 'fee on request'}
-                    {d.nextSlot ? ` · next: ${d.nextSlot}` : ''}
+            {result.recommendedDoctors.map((d) => {
+              // #9 Auto-book deep-link — pre-fill the booking form with the
+              // symptom check's reason + back-link via fromCheckId.
+              const reason = result.aiSummary || (result.results[0]?.specialty ? `Symptom-checker referral: ${result.results[0].specialty}` : 'Symptom-checker referral');
+              const params = new URLSearchParams({ reason });
+              if (result.checkId) params.set('fromCheckId', result.checkId);
+              return (
+                <div key={d.doctorId} style={{
+                  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                  padding: '12px 14px', background: 'var(--bg-main)',
+                  borderRadius: 'var(--radius-md)', flexWrap: 'wrap', gap: '10px',
+                }}>
+                  <div>
+                    <div style={{ fontWeight: 700 }}>{d.name}</div>
+                    <div style={{ fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
+                      {d.specialty} · {d.consultationFee ? `LKR ${d.consultationFee}` : 'fee on request'}
+                      {d.nextSlot ? ` · next: ${d.nextSlot}` : ''}
+                    </div>
                   </div>
+                  <Link
+                    href={`/appointment/book/${d.doctorId}?${params.toString()}`}
+                    className="med-button primary sm"
+                    style={{ textDecoration: 'none' }}
+                  >
+                    Book {d.specialty}
+                  </Link>
                 </div>
-                <Link
-                  href={`/appointment/book/${d.doctorId}`}
-                  className="med-button primary sm"
-                  style={{ textDecoration: 'none' }}
-                >
-                  Book
-                </Link>
-              </div>
-            ))}
+              );
+            })}
           </div>
+        </div>
+      )}
+
+      {/* #14 PDF download for this check */}
+      {result.checkId && (
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16 }}>
+          <button
+            type="button"
+            onClick={async () => {
+              try {
+                await symptomApi.downloadCheckPdf(result.checkId!);
+              } catch (err: any) {
+                showToast(err.message || 'Failed to download PDF', 'error');
+              }
+            }}
+            className="med-button secondary sm"
+            style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}
+          >
+            <Download size={14} /> Download PDF report
+          </button>
         </div>
       )}
 
