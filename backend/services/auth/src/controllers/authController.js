@@ -45,6 +45,13 @@ exports.login = async (req, res) => {
       return res.json({ user, token: issueToken({ userId: user.id, email: user.email, role: 'doctor' }) });
     }
   } catch (err) {
+    // Surface doctor service's domain-specific 401 messages (e.g. "Your license
+    // is pending approval", "Account inactive") so the user sees the real
+    // reason instead of falling through to the patient login lookup.
+    if (err.response?.status === 401 && err.response?.data?.message
+        && /pending approval|inactive|suspended|not verified/i.test(err.response.data.message)) {
+      return res.status(401).json({ message: err.response.data.message });
+    }
     if (err.response && err.response.status !== 401 && err.response.status !== 404) {
       console.error('[auth] doctor login error:', err.message);
     }
@@ -77,6 +84,20 @@ exports.register = async (req, res) => {
     if (!user) {
       return res.status(502).json({ message: 'Registration succeeded but response was malformed.' });
     }
+
+    // Doctors must wait for admin approval before they can log in. The
+    // doctor service signals this with `requiresApproval: true`. We do NOT
+    // issue a JWT in that case — the registration page is responsible for
+    // showing the "pending approval" message.
+    if (role === 'doctor' || data.requiresApproval) {
+      return res.status(201).json({
+        user,
+        requiresApproval: true,
+        message: data.message
+          || 'Registration received. An administrator will review your license. You will be notified once approved.',
+      });
+    }
+
     return res.status(201).json({ user, token: issueToken({ userId: user.id, email: user.email, role }) });
   } catch (err) {
     const status = err.response?.status || 502;

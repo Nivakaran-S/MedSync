@@ -3,9 +3,9 @@
 import React, { useState, useEffect } from 'react';
 import { MedCard as Card, MedInput as Input, MedButton as Button, showToast } from '../components/UI';
 import { useAuth } from '../context/AuthContext';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { Lock } from 'lucide-react';
+import { Lock, Hourglass } from 'lucide-react';
 
 export default function LoginPage() {
     const [email, setEmail] = useState('');
@@ -13,6 +13,8 @@ export default function LoginPage() {
     const [loading, setLoading] = useState(false);
     const { login, user } = useAuth();
     const router = useRouter();
+    const searchParams = useSearchParams();
+    const pendingApproval = searchParams?.get('pendingApproval') === '1';
 
     // Redirect if already logged in
     useEffect(() => {
@@ -78,6 +80,24 @@ export default function LoginPage() {
                     <h2>Welcome Back</h2>
                     <p>Enter your credentials to access your dashboard</p>
                 </div>
+
+                {pendingApproval && (
+                    <div style={{
+                        marginBottom: 20, padding: '14px 16px',
+                        background: '#fef3c7', border: '1px solid #fcd34d', borderRadius: 12,
+                        color: '#78350f', display: 'flex', alignItems: 'flex-start', gap: 10,
+                    }}>
+                        <Hourglass size={20} style={{ flexShrink: 0, marginTop: 2 }} />
+                        <div>
+                            <strong>Awaiting administrator approval</strong>
+                            <p style={{ margin: '4px 0 0', fontSize: '0.9rem' }}>
+                                Thanks for registering. We&apos;ve received your details and license.
+                                An administrator will review and approve your account — you&apos;ll receive
+                                an email once that happens. You won&apos;t be able to sign in until then.
+                            </p>
+                        </div>
+                    </div>
+                )}
 
                 <Card title="Sign In" icon={<Lock size={20} />}>
                     <form onSubmit={handleSubmit} style={{ padding: '8px 4px' }}>

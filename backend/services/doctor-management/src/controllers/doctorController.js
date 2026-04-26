@@ -121,17 +121,18 @@ exports.registerDoctor = async (req, res) => {
       timestamp: new Date(),
     });
 
-    const token = jwt.sign(
-      { userId: doctor._id, doctorId: doctor._id, email: doctor.contact.email, role: 'doctor' },
-      JWT_SECRET,
-      { expiresIn: JWT_EXPIRE }
-    );
-
+    // ⚠ Do NOT issue a JWT here. New doctors must wait for admin approval
+    // before they can log in. Returning a token would let them call
+    // protected endpoints immediately, defeating the approval gate.
     const doctorObj = doctor.toObject();
     delete doctorObj.password;
     doctorObj.role = 'doctor';
 
-    res.status(201).json({ token, doctor: doctorObj });
+    res.status(201).json({
+      doctor: doctorObj,
+      requiresApproval: true,
+      message: 'Registration received. An administrator will review your license and notify you by email once approved. You will not be able to log in until then.',
+    });
   } catch (error) {
     res.status(400).json({ message: error.message });
   }

@@ -4,11 +4,17 @@ import React, { createContext, useContext, useState, useEffect, ReactNode } from
 import Cookies from 'js-cookie';
 import { authService, User as AuthUser } from '../services/authService';
 
+export interface RegisterResult {
+  user: AuthUser;
+  requiresApproval: boolean;
+  message?: string;
+}
+
 interface AuthContextType {
   user: AuthUser | null;
   token: string | null;
   login: (email: string, password: string) => Promise<AuthUser>;
-  register: (data: Record<string, unknown> & { role: 'patient' | 'doctor' }) => Promise<AuthUser>;
+  register: (data: Record<string, unknown> & { role: 'patient' | 'doctor' }) => Promise<RegisterResult>;
   logout: () => void;
   isLoading: boolean;
 }
@@ -54,17 +60,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return u;
   };
 
-  const register = async (formData: Record<string, unknown> & { role: 'patient' | 'doctor' }) => {
-    const data = await authService.register(formData);
+  const register = async (formData: Record<string, unknown> & { role: 'patient' | 'doctor' }): Promise<RegisterResult> => {
+    const data: any = await authService.register(formData);
     const u = normaliseUser(data.user);
     if (!u.role) u.role = formData.role;
+
+    // Doctors register but cannot log in until an admin approves them. The
+    // backend signals this by omitting `token` and setting requiresApproval.
+    // In that case we deliberately do NOT auto-log them in.
+    if (data.requiresApproval || !data.token) {
+      return { user: u, requiresApproval: true, message: data.message };
+    }
+
     authService.setToken(data.token);
     if (typeof window !== 'undefined') {
       localStorage.setItem('medsync_user', JSON.stringify(u));
     }
     setToken(data.token);
     setUser(u);
-    return u;
+    return { user: u, requiresApproval: false };
   };
 
   const logout = () => {
