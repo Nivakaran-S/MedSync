@@ -39,9 +39,11 @@ const audit = (req, patientId, action, resource) =>
 
 // ─── Authentication ───────────────────────────────────────────────────────────
 
+const { uploadImage } = require('../utils/cloudinary');
+
 exports.register = async (req, res) => {
   try {
-    const { email, password, firstName, lastName, phone, dateOfBirth, gender, address, nationalId } = req.body;
+    const { email, password, firstName, lastName, phone, dateOfBirth, gender, address, nationalId, photo } = req.body;
 
     if (!email || !password || !firstName || !lastName) {
       return res.status(400).json({ message: 'Email, password, first name, and last name are required.' });
@@ -54,6 +56,13 @@ exports.register = async (req, res) => {
     if (existing) return res.status(409).json({ message: 'A patient with this email already exists.' });
 
     const hashedPassword = await bcrypt.hash(password, 12);
+
+    let photoUrl = '';
+    if (photo) {
+      const uploadResult = await uploadImage(photo, { folder: 'patient_photos' });
+      photoUrl = uploadResult.secure_url;
+    }
+
     const patient = new Patient({
       email: email.toLowerCase(),
       password: hashedPassword,
@@ -64,6 +73,7 @@ exports.register = async (req, res) => {
       gender,
       address,
       nationalId,
+      photoUrl,
     });
     await patient.save();
 
@@ -310,8 +320,19 @@ exports.updateProfile = async (req, res) => {
     if (!patient) return res.status(404).json({ message: 'Patient not found' });
 
     for (const key of allowed) {
-      if (req.body[key] !== undefined) patient[key] = req.body[key];
+      if (req.body[key] !== undefined) {
+        patient[key] = req.body[key];
+      }
     }
+
+    // Handle photo upload
+    if (req.file) {
+      const uploadResult = await uploadImage(req.file.path, { folder: 'patient_photos' });
+      patient.photoUrl = uploadResult.secure_url;
+      // Clean up the uploaded file
+      fs.unlinkSync(req.file.path);
+    }
+
     await patient.save();
     audit(req, patient._id, 'UPDATE_PROFILE');
 

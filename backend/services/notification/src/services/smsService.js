@@ -1,5 +1,6 @@
 let twilioClient = null;
-if (process.env.TWILIO_SID && process.env.TWILIO_AUTH_TOKEN && process.env.TWILIO_FROM) {
+if (process.env.TWILIO_SID && process.env.TWILIO_AUTH_TOKEN && process.env.TWILIO_FROM &&
+    process.env.TWILIO_SID.startsWith('AC') && !process.env.TWILIO_SID.includes('your_')) {
   twilioClient = require('twilio')(process.env.TWILIO_SID, process.env.TWILIO_AUTH_TOKEN);
 }
 

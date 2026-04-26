@@ -10,7 +10,7 @@ router.post('/login', ctrl.login);
 
 // ─── Self-service profile ────────────────────────────────────────────────────
 router.get('/profile', authMiddleware, ctrl.getProfile);
-router.put('/profile', authMiddleware, ctrl.updateProfile);
+router.put('/profile', authMiddleware, upload.single('photo'), ctrl.updateProfile);
 router.post('/profile/change-password', authMiddleware, ctrl.changePassword);
 router.delete('/profile', authMiddleware, ctrl.deactivateAccount);
 
