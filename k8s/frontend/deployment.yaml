@@ -25,19 +25,19 @@ spec:
         - name: NEXT_PUBLIC_AUTH_SERVICE_URL
           value: "http://medsync.local/api/auth"
         - name: NEXT_PUBLIC_PATIENT_SERVICE_URL
-          value: "http://medsync.local/api/patient"
+          value: "http://medsync.local/api/patients"
         - name: NEXT_PUBLIC_DOCTOR_SERVICE_URL
-          value: "http://medsync.local/api/doctor"
+          value: "http://medsync.local/api/doctors"
         - name: NEXT_PUBLIC_APPOINTMENT_SERVICE_URL
-          value: "http://medsync.local/api/appointment"
+          value: "http://medsync.local/api/appointments"
         - name: NEXT_PUBLIC_TELEMEDICINE_SERVICE_URL
-          value: "http://medsync.local/api/telemedicine"
+          value: "http://medsync.local/api/sessions"
         - name: NEXT_PUBLIC_PAYMENT_SERVICE_URL
-          value: "http://medsync.local/api/payment"
+          value: "http://medsync.local/api/payments"
         - name: NEXT_PUBLIC_NOTIFICATION_SERVICE_URL
-          value: "http://medsync.local/api/notification"
+          value: "http://medsync.local/api/notify"
         - name: NEXT_PUBLIC_SYMPTOM_CHECKER_URL
-          value: "http://medsync.local/api/ai"
+          value: "http://medsync.local/api/symptom-checker"
         resources:
           requests:
             memory: "128Mi"

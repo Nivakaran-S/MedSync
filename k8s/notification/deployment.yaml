@@ -25,6 +25,60 @@ spec:
           value: "3006"
         - name: KAFKA_BROKERS
           value: "kafka:9092"
+        - name: MONGO_BASE
+          valueFrom:
+            secretKeyRef:
+              name: medsync-secrets
+              key: MONGO_BASE
+        - name: MONGO_URI
+          value: "$(MONGO_BASE)/notification_db"
+        - name: JWT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: medsync-secrets
+              key: JWT_SECRET
+        - name: FRONTEND_ORIGIN
+          value: "http://medsync.local,http://localhost:3000"
+        - name: SMTP_HOST
+          valueFrom:
+            secretKeyRef:
+              name: medsync-secrets
+              key: SMTP_HOST
+        - name: SMTP_PORT
+          valueFrom:
+            secretKeyRef:
+              name: medsync-secrets
+              key: SMTP_PORT
+        - name: EMAIL_USER
+          valueFrom:
+            secretKeyRef:
+              name: medsync-secrets
+              key: EMAIL_USER
+        - name: EMAIL_PASS
+          valueFrom:
+            secretKeyRef:
+              name: medsync-secrets
+              key: EMAIL_PASS
+        - name: EMAIL_FROM
+          valueFrom:
+            secretKeyRef:
+              name: medsync-secrets
+              key: EMAIL_FROM
+        - name: TWILIO_SID
+          valueFrom:
+            secretKeyRef:
+              name: medsync-secrets
+              key: TWILIO_SID
+        - name: TWILIO_AUTH_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: medsync-secrets
+              key: TWILIO_AUTH_TOKEN
+        - name: TWILIO_FROM
+          valueFrom:
+            secretKeyRef:
+              name: medsync-secrets
+              key: TWILIO_FROM
         resources:
           requests:
             memory: "128Mi"

@@ -12,12 +12,18 @@ const paymentSchema = new mongoose.Schema(
         // Stripe identifiers
         stripeSessionId: { type: String, unique: true, sparse: true },
         stripePaymentIntentId: { type: String },
+        stripeRefundId: { type: String },
 
         status: {
             type: String,
             enum: ['pending', 'paid', 'failed', 'refunded'],
             default: 'pending',
         },
+
+        // Refund metadata (set when issueRefund() runs)
+        refundedAt: { type: Date },
+        refundedBy: { type: String },
+        refundReason: { type: String },
 
         receiptNumber: { type: String, unique: true, sparse: true },
         receiptHash: { type: String, unique: true, sparse: true },

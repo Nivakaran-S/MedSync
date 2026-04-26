@@ -152,16 +152,69 @@ exports.getDoctor = async (req, res) => {
   }
 };
 
+// Profile fields a doctor (or admin acting as them) is allowed to update via
+// the generic PUT endpoint. Sensitive fields (password, isVerified, isActive,
+// email, contact) must go through dedicated endpoints.
+const DOCTOR_UPDATABLE_FIELDS = [
+  'firstName', 'lastName', 'name', 'specialty', 'qualifications',
+  'bio', 'profileImage', 'experience', 'consultationFee', 'languages',
+  'address', 'phone', 'gender', 'dateOfBirth',
+];
+
 exports.updateDoctor = async (req, res) => {
   try {
     if (req.user && req.user.role !== 'admin' && req.user.id !== req.params.id) {
       return res.status(403).json({ message: 'Forbidden: You can only update your own profile.' });
     }
-    const doctor = await Doctor.findByIdAndUpdate(req.params.id, req.body, { new: true });
+
+    const update = {};
+    for (const key of DOCTOR_UPDATABLE_FIELDS) {
+      if (req.body[key] !== undefined) update[key] = req.body[key];
+    }
+
+    if (req.body.password || req.body.isVerified !== undefined || req.body.isActive !== undefined) {
+      return res.status(400).json({
+        message: 'password, isVerified and isActive cannot be updated via this endpoint. ' +
+                 'Use POST /:id/change-password or PATCH /:id/status.',
+      });
+    }
+
+    const doctor = await Doctor.findByIdAndUpdate(req.params.id, update, { new: true, runValidators: true });
     if (!doctor) return res.status(404).json({ message: 'Doctor not found' });
     res.json(doctor);
   } catch (error) {
     res.status(400).json({ message: error.message });
+  }
+};
+
+exports.changePassword = async (req, res) => {
+  try {
+    if (req.user && req.user.role !== 'admin' && req.user.id !== req.params.id) {
+      return res.status(403).json({ message: 'Forbidden: You can only change your own password.' });
+    }
+
+    const { currentPassword, newPassword } = req.body || {};
+    if (!newPassword || newPassword.length < 8) {
+      return res.status(400).json({ message: 'newPassword is required and must be at least 8 characters.' });
+    }
+
+    const doctor = await Doctor.findById(req.params.id);
+    if (!doctor) return res.status(404).json({ message: 'Doctor not found' });
+
+    // Admins can reset without knowing the current password; doctors must verify.
+    if (req.user?.role !== 'admin') {
+      if (!currentPassword) {
+        return res.status(400).json({ message: 'currentPassword is required.' });
+      }
+      const ok = await bcrypt.compare(currentPassword, doctor.password);
+      if (!ok) return res.status(401).json({ message: 'Current password is incorrect.' });
+    }
+
+    doctor.password = await bcrypt.hash(newPassword, 12);
+    await doctor.save();
+    res.json({ message: 'Password updated successfully.' });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
   }
 };
 

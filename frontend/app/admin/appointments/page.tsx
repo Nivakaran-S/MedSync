@@ -19,12 +19,15 @@ export default function AdminAppointmentsPage() {
         if (user?.role === 'admin') {
             loadAppointments();
         }
-    }, [user]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [user, statusFilter]);
 
     const loadAppointments = async () => {
         try {
             setLoading(true);
-            const data = await appointmentApi.adminGetAllAppointments();
+            const data = await appointmentApi.listAllAppointments(
+                statusFilter === 'all' ? undefined : statusFilter
+            );
             setAppointments(Array.isArray(data) ? data : []);
         } catch (err) {
             showToast('Failed to load system appointments', 'error');

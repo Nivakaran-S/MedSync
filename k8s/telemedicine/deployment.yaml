@@ -29,6 +29,18 @@ spec:
           value: "6379"
         - name: PORT
           value: "3004"
+        - name: MONGO_BASE
+          valueFrom:
+            secretKeyRef:
+              name: medsync-secrets
+              key: MONGO_BASE
+        - name: MONGO_URI
+          value: "$(MONGO_BASE)/telemedicine_db"
+        - name: JWT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: medsync-secrets
+              key: JWT_SECRET
         resources:
           requests:
             memory: "256Mi"

@@ -25,6 +25,9 @@ router.get('/patient/:id', auth, ctrl.getPatientPaymentHistory);
 router.get('/:appointmentId/receipt/pdf', auth, ctrl.getReceiptPdf);
 router.post('/:appointmentId/receipt/email', auth, ctrl.sendReceiptEmail);
 
+// Admin: manual refund for a paid appointment
+router.post('/:appointmentId/refund', auth, ctrl.refundPayment);
+
 // Payment details for a specific appointment
 router.get('/:appointmentId', auth, ctrl.getPaymentByAppointment);
 

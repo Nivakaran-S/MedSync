@@ -7,7 +7,7 @@ import { Card, Button, Badge, showToast, Tabs } from '../components/UI';
 import { useAuth } from '../context/AuthContext';
 import {
   Stethoscope, Hourglass, Search, Brain, AlertTriangle, FileText, Camera,
-  MessageCircle, Send, ImagePlus, Pill, ShieldAlert, UserCheck, X,
+  MessageCircle, Send, ImagePlus, Pill, ShieldAlert, UserCheck, X, Trash2,
 } from 'lucide-react';
 
 const commonSymptoms = [
@@ -500,11 +500,34 @@ export default function SymptomCheckerPage() {
               <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                 {history.map((item: any) => (
                   <div key={item._id} className="history-item">
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px', gap: '8px' }}>
                       <Badge text={(item.overallUrgency || 'low').toUpperCase()} variant={urgencyVariant(item.overallUrgency)} />
-                      <small style={{ color: 'var(--text-muted)' }}>
-                        {new Date(item.timestamp || item.createdAt).toLocaleString()}
-                      </small>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <small style={{ color: 'var(--text-muted)' }}>
+                          {new Date(item.timestamp || item.createdAt).toLocaleString()}
+                        </small>
+                        <button
+                          onClick={async () => {
+                            if (!confirm('Delete this symptom check?')) return;
+                            try {
+                              await symptomApi.deleteCheck(item._id);
+                              setHistory(prev => prev.filter(h => h._id !== item._id));
+                              setHistoryTotal(prev => Math.max(0, prev - 1));
+                              showToast('Symptom check deleted', 'success');
+                            } catch (err: unknown) {
+                              showToast(err instanceof Error ? err.message : 'Failed to delete', 'error');
+                            }
+                          }}
+                          title="Delete this check"
+                          style={{
+                            background: 'transparent', border: '1px solid #fecaca',
+                            borderRadius: '6px', padding: '4px 6px', cursor: 'pointer',
+                            color: '#dc2626', display: 'flex', alignItems: 'center',
+                          }}
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
                     </div>
                     <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', marginBottom: '6px' }}>
                       {item.symptoms?.length > 90 ? item.symptoms.substring(0, 90) + '…' : item.symptoms}

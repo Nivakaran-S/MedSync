@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(grep -E \"\\\\.\\(ts|tsx\\)$\")",
+      "Bash(node -e \"console.log\\('checking syntax...'\\); require\\('./backend/services/notification/src/controllers/notificationController.js'\\); require\\('./backend/services/notification/src/routes/notificationRoutes.js'\\); require\\('./backend/services/notification/src/kafka/consumer.js'\\); console.log\\('notification OK'\\);\")",
+      "Bash(node --check c:/Users/LENOVO/Desktop/MedSync-Latest/MedSync/__TRACKED_VAR__)",
+      "Bash(python3 -c \"import yaml; yaml.safe_load\\(open\\('docker-compose.yml'\\)\\)\")",
+      "Bash(python -c \"import yaml; yaml.safe_load\\(open\\('docker-compose.yml'\\)\\)\")",
+      "Bash(python -c ' *)",
+      "Bash(python -c \"import yaml; list\\(yaml.safe_load_all\\(open\\('k8s/secrets.yaml'\\)\\)\\); print\\('OK'\\)\")"
+    ]
+  }
+}

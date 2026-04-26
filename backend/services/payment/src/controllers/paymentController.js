@@ -197,10 +197,21 @@ exports.handleWebhook = async (req, res, _next) => {
                 { new: true }
             );
 
-            await axios.put(`${APPOINTMENT_SERVICE_URL}/api/appointments/${appointmentId}/payment`, {
-                paymentStatus: 'paid',
-                paymentId: payment?._id?.toString() || session.payment_intent,
-            });
+            const internalKey = process.env.INTERNAL_API_KEY;
+            if (!internalKey) {
+                throw new Error('INTERNAL_API_KEY is not configured — refusing to update appointment without auth');
+            }
+            await axios.put(
+                `${APPOINTMENT_SERVICE_URL}/api/appointments/${appointmentId}/payment`,
+                {
+                    paymentStatus: 'paid',
+                    paymentId: payment?._id?.toString() || session.payment_intent,
+                },
+                {
+                    headers: { 'x-internal-api-key': internalKey },
+                    timeout: 5000,
+                }
+            );
 
             const recipientEmail =
                 session?.customer_details?.email ||
@@ -234,7 +245,14 @@ exports.handleWebhook = async (req, res, _next) => {
 
             console.log(`[Webhook] Payment confirmed for appointment ${appointmentId}`);
         } catch (err) {
+            // Surface failures to Stripe so it retries the webhook. Stripe retries
+            // automatically on 5xx responses; logging alone would silently lose state.
             console.error(`[Webhook] Post-payment update failed: ${err.message}`);
+            return res.status(500).json({
+                received: true,
+                error: 'post_payment_update_failed',
+                message: err.message,
+            });
         }
     }
 
@@ -388,21 +406,109 @@ exports.getAllPayments = async (req, res, next) => {
     }
 };
 
+// ── Shared refund helper (used by admin endpoint AND kafka handler) ───────
+const issueRefund = async ({ appointmentId, reason, actor }) => {
+    const payment = await Payment.findOne({ appointmentId });
+    if (!payment) {
+        const err = new Error(`No payment found for appointment ${appointmentId}`);
+        err.statusCode = 404;
+        throw err;
+    }
+    if (payment.status === 'refunded') {
+        return { payment, alreadyRefunded: true };
+    }
+    if (payment.status !== 'paid') {
+        const err = new Error(`Cannot refund a payment in status "${payment.status}"`);
+        err.statusCode = 400;
+        throw err;
+    }
+
+    let stripeRefundId = null;
+    if (payment.stripePaymentIntentId) {
+        try {
+            const refund = await stripe.refunds.create({
+                payment_intent: payment.stripePaymentIntentId,
+                reason: reason && ['duplicate', 'fraudulent', 'requested_by_customer'].includes(reason)
+                    ? reason
+                    : 'requested_by_customer',
+                metadata: {
+                    appointmentId: String(appointmentId),
+                    actor: actor || 'system',
+                },
+            });
+            stripeRefundId = refund.id;
+        } catch (err) {
+            console.error('[Payment] Stripe refund failed:', err.message);
+            const wrapped = new Error(`Stripe refund failed: ${err.message}`);
+            wrapped.statusCode = 502;
+            throw wrapped;
+        }
+    } else {
+        console.warn(`[Payment] Refunding payment ${payment._id} without a Stripe PaymentIntent — DB-only update`);
+    }
+
+    payment.status = 'refunded';
+    payment.refundedAt = new Date();
+    payment.refundedBy = actor || 'system';
+    if (reason) payment.refundReason = reason;
+    if (stripeRefundId) payment.stripeRefundId = stripeRefundId;
+    await payment.save();
+
+    await sendEvent('payment-events', {
+        type: 'PAYMENT_REFUNDED',
+        data: {
+            appointmentId,
+            paymentId: payment._id,
+            patientId: payment.patientId,
+            patientEmail: payment.patientEmail,
+            patientPhone: payment.patientPhone,
+            amount: payment.amount,
+            currency: payment.currency,
+            stripeRefundId,
+            actor: actor || 'system',
+            reason: reason || null,
+        },
+    }).catch(err => console.error('[Payment] Failed to publish PAYMENT_REFUNDED event:', err.message));
+
+    return { payment, alreadyRefunded: false };
+};
+
+// ── POST /api/payments/:appointmentId/refund (admin) ─────────────────────
+exports.refundPayment = async (req, res, next) => {
+    try {
+        if (req.user?.role !== 'admin') {
+            return res.status(403).json({ message: 'Forbidden: Admin access only.' });
+        }
+        const { reason } = req.body || {};
+        const { payment, alreadyRefunded } = await issueRefund({
+            appointmentId: req.params.appointmentId,
+            reason,
+            actor: req.user.email || req.user.id || 'admin',
+        });
+        if (alreadyRefunded) {
+            return res.json({ message: 'Payment was already refunded.', payment });
+        }
+        res.json({ message: 'Refund issued.', payment });
+    } catch (error) {
+        if (error.statusCode) {
+            return res.status(error.statusCode).json({ message: error.message });
+        }
+        next(error);
+    }
+};
+
 // ── Kafka Event Handlers ──────────────────────────────────────────────────
 exports.handleAppointmentCancelledEvent = async (data) => {
     const { appointmentId, wasPaid } = data;
-    if (wasPaid) {
-        try {
-            const updated = await Payment.findOneAndUpdate(
-                { appointmentId, status: 'paid' },
-                { status: 'refunded' },
-                { new: true }
-            );
-            if (updated) {
-                console.log(`[Payment] Simulated refund processed successfully for appointment ${appointmentId}`);
-            }
-        } catch (err) {
-            console.error('[Payment] Refund update failed:', err);
-        }
+    if (!wasPaid) return;
+    try {
+        await issueRefund({
+            appointmentId,
+            reason: 'requested_by_customer',
+            actor: 'system:appointment-cancelled',
+        });
+        console.log(`[Payment] Refund processed for cancelled appointment ${appointmentId}`);
+    } catch (err) {
+        console.error(`[Payment] Auto-refund failed for ${appointmentId}:`, err.message);
     }
 };

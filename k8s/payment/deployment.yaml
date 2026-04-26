@@ -23,10 +23,71 @@ spec:
         env:
         - name: KAFKA_BROKERS
           value: "kafka:9092"
+        - name: MONGO_BASE
+          valueFrom:
+            secretKeyRef:
+              name: medsync-secrets
+              key: MONGO_BASE
         - name: MONGO_URI
-          value: "mongodb://mongo:27017/payment_db"
+          value: "$(MONGO_BASE)/payment_db"
         - name: PORT
           value: "3005"
+        - name: JWT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: medsync-secrets
+              key: JWT_SECRET
+        - name: JWT_EXPIRE
+          valueFrom:
+            secretKeyRef:
+              name: medsync-secrets
+              key: JWT_EXPIRE
+        - name: APPOINTMENT_SERVICE_URL
+          value: "http://appointment:3003"
+        - name: NOTIFICATION_SERVICE_URL
+          value: "http://notification:3006/api/notify"
+        - name: FRONTEND_URL
+          value: "http://medsync.local"
+        - name: STRIPE_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: medsync-secrets
+              key: STRIPE_SECRET_KEY
+        - name: STRIPE_WEBHOOK_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: medsync-secrets
+              key: STRIPE_WEBHOOK_SECRET
+        - name: INTERNAL_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: medsync-secrets
+              key: INTERNAL_API_KEY
+        - name: SMTP_HOST
+          valueFrom:
+            secretKeyRef:
+              name: medsync-secrets
+              key: SMTP_HOST
+        - name: SMTP_PORT
+          valueFrom:
+            secretKeyRef:
+              name: medsync-secrets
+              key: SMTP_PORT
+        - name: EMAIL_USER
+          valueFrom:
+            secretKeyRef:
+              name: medsync-secrets
+              key: EMAIL_USER
+        - name: EMAIL_PASS
+          valueFrom:
+            secretKeyRef:
+              name: medsync-secrets
+              key: EMAIL_PASS
+        - name: EMAIL_FROM
+          valueFrom:
+            secretKeyRef:
+              name: medsync-secrets
+              key: EMAIL_FROM
         resources:
           requests:
             memory: "256Mi"

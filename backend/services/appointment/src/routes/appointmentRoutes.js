@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const ctrl = require('../controllers/appointmentController');
 const auth = require('../middleware/auth');
+const internalAuth = require('../middleware/internalAuth');
 const { createAppointmentRules, updateStatusRules } = require('../middleware/validate');
 
 // ── Public / Internal ────────────────────────────────────────────────────────
@@ -42,9 +43,9 @@ router.put('/:id/status', auth, updateStatusRules, ctrl.updateStatus);
 // Reschedule (patient or admin)
 router.put('/:id/reschedule', auth, ctrl.rescheduleAppointment);
 
-// ── Internal Service Call (no JWT — payment service calls this) ───────────────
-// NOTE: If you want to secure this in production, use a shared service secret header.
-router.put('/:id/payment', ctrl.updatePaymentStatus);
+// ── Internal Service Call (payment service → appointment service) ───────────
+// Authenticated via shared INTERNAL_API_KEY header (`x-internal-api-key`).
+router.put('/:id/payment', internalAuth, ctrl.updatePaymentStatus);
 
 // Cancel appointment
 router.delete('/:id', auth, ctrl.cancelAppointment);

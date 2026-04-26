@@ -5,6 +5,7 @@ const APPOINTMENT_SERVICE_URL = process.env.NEXT_PUBLIC_APPOINTMENT_SERVICE_URL 
 const TELEMEDICINE_SERVICE_URL = process.env.NEXT_PUBLIC_TELEMEDICINE_SERVICE_URL || 'http://localhost:3004/api/sessions';
 const PAYMENT_SERVICE_URL = process.env.NEXT_PUBLIC_PAYMENT_SERVICE_URL || 'http://localhost:3005/api/payments';
 const SYMPTOM_CHECKER_URL = process.env.NEXT_PUBLIC_SYMPTOM_CHECKER_URL || 'http://localhost:3007/api/symptom-checker';
+const NOTIFICATION_SERVICE_URL = process.env.NEXT_PUBLIC_NOTIFICATION_SERVICE_URL || 'http://localhost:3006/api/notify';
 
 export const PATIENT_API_BASE = PATIENT_SERVICE_URL;
 
@@ -390,6 +391,12 @@ export const doctorApi = {
     });
     return parseOrThrow(response, 'Failed to update doctor status');
   },
+  changePassword: async (id: string, data: { currentPassword?: string; newPassword: string }) => {
+    const response = await fetch(`${DOCTOR_SERVICE_URL}/${id}/change-password`, {
+      method: 'POST', headers: getAuthHeaders(), body: JSON.stringify(data),
+    });
+    return parseOrThrow(response, 'Failed to change password');
+  },
 };
 
 export interface SymptomAnalyzePayload {
@@ -461,6 +468,86 @@ export const symptomApi = {
   getAdminAnalytics: async () => {
     const response = await fetch(`${SYMPTOM_CHECKER_URL}/admin/analytics`, { headers: getAuthHeaders() });
     return parseOrThrow(response, 'Failed to fetch analytics');
+  },
+
+  deleteCheck: async (id: string) => {
+    const response = await fetch(`${SYMPTOM_CHECKER_URL}/checks/${id}`, {
+      method: 'DELETE', headers: getAuthHeaders(),
+    });
+    return parseOrThrow(response, 'Failed to delete check');
+  },
+};
+
+export interface MedNotification {
+  _id: string;
+  userId: string;
+  type: 'in-app' | 'email' | 'sms';
+  category: 'appointment' | 'payment' | 'prescription' | 'account' | 'system' | 'other';
+  title?: string;
+  subject?: string;
+  message: string;
+  metadata?: Record<string, unknown>;
+  isRead: boolean;
+  readAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface NotificationListResponse {
+  items: MedNotification[];
+  page: number;
+  limit: number;
+  total: number;
+  unread: number;
+  totalPages: number;
+}
+
+export const notificationApi = {
+  list: async (opts?: { unreadOnly?: boolean; page?: number; limit?: number }): Promise<NotificationListResponse> => {
+    const qs = new URLSearchParams();
+    if (opts?.unreadOnly) qs.set('unreadOnly', 'true');
+    if (opts?.page) qs.set('page', String(opts.page));
+    if (opts?.limit) qs.set('limit', String(opts.limit));
+    const url = qs.toString() ? `${NOTIFICATION_SERVICE_URL}?${qs}` : NOTIFICATION_SERVICE_URL;
+    const response = await fetch(url, { headers: getAuthHeaders() });
+    return parseOrThrow(response, 'Failed to fetch notifications');
+  },
+  get: async (id: string): Promise<MedNotification> => {
+    const response = await fetch(`${NOTIFICATION_SERVICE_URL}/${id}`, { headers: getAuthHeaders() });
+    return parseOrThrow(response, 'Failed to fetch notification');
+  },
+  markRead: async (id: string): Promise<MedNotification> => {
+    const response = await fetch(`${NOTIFICATION_SERVICE_URL}/${id}/read`, {
+      method: 'PATCH', headers: getAuthHeaders(),
+    });
+    return parseOrThrow(response, 'Failed to mark notification as read');
+  },
+  markAllRead: async (): Promise<{ updated: number }> => {
+    const response = await fetch(`${NOTIFICATION_SERVICE_URL}/read-all`, {
+      method: 'PATCH', headers: getAuthHeaders(),
+    });
+    return parseOrThrow(response, 'Failed to mark notifications as read');
+  },
+  delete: async (id: string): Promise<{ message: string }> => {
+    const response = await fetch(`${NOTIFICATION_SERVICE_URL}/${id}`, {
+      method: 'DELETE', headers: getAuthHeaders(),
+    });
+    return parseOrThrow(response, 'Failed to delete notification');
+  },
+  adminTrigger: async (data: {
+    userId?: string;
+    email?: string;
+    phone?: string;
+    title?: string;
+    subject?: string;
+    message: string;
+    category?: string;
+    channels: Array<'in-app' | 'email' | 'sms'>;
+  }) => {
+    const response = await fetch(`${NOTIFICATION_SERVICE_URL}/admin/trigger`, {
+      method: 'POST', headers: getAuthHeaders(), body: JSON.stringify(data),
+    });
+    return parseOrThrow(response, 'Failed to trigger notification');
   },
 };
 
@@ -590,6 +677,12 @@ export const paymentApi = {
   adminGetAllPayments: async () => {
     const response = await fetch(PAYMENT_SERVICE_URL, { headers: getAuthHeaders() });
     return parseOrThrow(response, 'Failed to fetch all system payments');
+  },
+  refund: async (appointmentId: string, reason?: string) => {
+    const response = await fetch(`${PAYMENT_SERVICE_URL}/${appointmentId}/refund`, {
+      method: 'POST', headers: getAuthHeaders(), body: JSON.stringify({ reason }),
+    });
+    return parseOrThrow(response, 'Failed to issue refund');
   },
 };
 
