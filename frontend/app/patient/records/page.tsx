@@ -13,6 +13,7 @@ const PATIENT_SERVICE_ORIGIN = (() => {
   }
 })();
 import { Card, Button, MedButton, Tabs, Badge, showToast, Modal } from '../../components/UI';
+import SourceBadge from '../../components/SourceBadge';
 
 export default function RecordsPage() {
   const [activeTab, setActiveTab] = useState(0);
@@ -169,6 +170,7 @@ export default function RecordsPage() {
     }
   };
 
+
   return (
     <div className="animate-in">
       <h1 className="page-title">Medical Records & Documents</h1>
@@ -203,6 +205,7 @@ export default function RecordsPage() {
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                     <div>
                       <strong style={{ fontSize: '1rem' }}>{item.description}</strong>
+                      <SourceBadge source={item.source} by={item.createdByName} />
                       {item.diagnosis && <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginTop: '4px' }}>Diagnosis: {item.diagnosis}</p>}
                       {item.doctor && <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>Doctor: {item.doctor}</p>}
                       {item.notes && <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', fontStyle: 'italic' }}>{item.notes}</p>}
@@ -233,8 +236,9 @@ export default function RecordsPage() {
                 <div key={idx} className="history-item">
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                     <div>
-                      <strong style={{ fontSize: '1rem' }}>{item.medication}</strong>
-                      <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>Dosage: {item.dosage}</p>
+                      <strong style={{ fontSize: '1rem' }}>{item.medication || (item.medications && item.medications[0]?.medication)}</strong>
+                      <SourceBadge source={item.source} by={item.createdByName || item.doctorName} />
+                      <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>Dosage: {item.dosage || (item.medications && item.medications[0]?.dosage)}</p>
                       {item.frequency && <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>Frequency: {item.frequency}</p>}
                       {item.duration && <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>Duration: {item.duration}</p>}
                       {item.instructions && <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', fontStyle: 'italic' }}>{item.instructions}</p>}
@@ -337,6 +341,7 @@ export default function RecordsPage() {
                       <div className="doc-type-icon">{getDocTypeIcon(doc.type)}</div>
                       <div>
                         <strong style={{ fontSize: '0.95rem' }}>{doc.fileName}</strong>
+                        <SourceBadge source={doc.source} by={doc.createdByName} />
                         <br />
                         <small style={{ color: 'var(--text-muted)' }}>
                           {doc.type} • {new Date(doc.uploadDate).toLocaleDateString()}

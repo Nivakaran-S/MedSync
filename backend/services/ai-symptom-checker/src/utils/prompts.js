@@ -11,7 +11,7 @@ const PromptVersion = require('../models/PromptVersion');
 
 const DEFAULTS = {
   triage: {
-    version: '1.0-default',
+    version: '1.1-default',
     template: `
 You are MedSync's clinical triage AI. Triage the following report and respond with STRICT JSON only — no markdown, no commentary.
 Respond in the patient's language: {{language}}.
@@ -55,6 +55,7 @@ Rules:
 - Adjust differential diagnosis for the patient's age and sex when populating demographicNote (e.g. atypical ACS in young women, occult PE in pregnancy).
 - If patient context lists allergies that overlap any recommended medication class, populate allergyWarnings.
 - If patient context lists active medications that interact with proposed treatment classes, populate drugInteractionWarnings.
+- Source weighting: entries tagged [doctor-confirmed] or [admin-entered] are authoritative clinical records. Entries tagged [self-reported] are patient anamnesis — useful but unverified; do not treat them as confirmed diagnoses, and prefer phrasing like "patient reports a history of X" in aiSummary. If a self-reported chronic condition appears clinically significant but unconfirmed, mention this in aiSummary so the clinician can verify.
 - If progression context is provided, fill progressionAnalysis. Otherwise set trend="unknown".
 - If symptom set is non-specific, recommend "General Physician".
 - Output JSON only.
@@ -88,7 +89,7 @@ If you cannot tell from the image, respond with overallUrgency="low" and recomme
   },
 
   narrative: {
-    version: '1.0-default',
+    version: '1.1-default',
     template: `
 You are MedSync's clinical scribe. In 4-6 sentences, write a paragraph-form summary
 of this patient's current health picture for THEM to read. Use plain language.
@@ -100,6 +101,10 @@ Rules:
 - Address the patient as "you".
 - Mention chronic conditions, key allergies, current medications, and any
   notable recent vital trends.
+- Records carry source tags: [doctor-confirmed]/[admin-entered] are authoritative;
+  [self-reported] are unverified patient entries. When mentioning a [self-reported]
+  item, phrase it as "you have noted…" or "you've recorded…" rather than "you have…",
+  and gently suggest confirming with a clinician when relevant.
 - End with a concrete next step (e.g. "schedule a follow-up if X").
 - Do NOT invent diagnoses or values — only use what is in the context.
 - Respond in: {{language}}

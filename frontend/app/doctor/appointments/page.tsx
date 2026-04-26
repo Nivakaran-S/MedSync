@@ -6,6 +6,7 @@ import { useAuth } from '../../context/AuthContext';
 import { appointmentApi, patientApi } from '../../services/api';
 import { Modal, MedInput as Input, MedButton as Button, showToast } from '../../components/UI';
 import PrescriptionEditor from '../../components/PrescriptionEditor';
+import SourceBadge from '../../components/SourceBadge';
 import {
   User, FileText, Pill, Calendar, ShieldBan, Video,
   CheckCircle, XCircle, Clock, RefreshCcw, Search,
@@ -39,9 +40,9 @@ interface PatientRecord {
     bloodType?: string;
     allergies?: string;
   };
-  medicalHistory: Array<{ _id: string; description: string; diagnosis?: string; doctor?: string; notes?: string; date: string }>;
-  prescriptions: Array<{ _id: string; medication: string; dosage: string; frequency?: string; duration?: string; instructions?: string; prescribedBy?: string; date: string }>;
-  documents: Array<{ _id: string; fileName: string; fileUrl: string; type: string; uploadDate: string }>;
+  medicalHistory: Array<{ _id: string; description: string; diagnosis?: string; doctor?: string; notes?: string; date: string; source?: string; createdByName?: string }>;
+  prescriptions: Array<{ _id: string; medication: string; dosage: string; frequency?: string; duration?: string; instructions?: string; prescribedBy?: string; date: string; source?: string; createdByName?: string; doctorName?: string }>;
+  documents: Array<{ _id: string; fileName: string; fileUrl: string; type: string; uploadDate: string; source?: string; createdByName?: string }>;
 }
 
 const STATUS_COLORS: Record<string, { bg: string; text: string }> = {
@@ -428,8 +429,11 @@ export default function DoctorAppointments() {
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                   {record.medicalHistory.map(h => (
-                    <div key={h._id} style={{ padding: '10px 12px', background: 'var(--bg-main)', borderRadius: 'var(--radius-sm)', fontSize: '0.88rem' }}>
-                      <strong>{h.description}</strong>
+                    <div key={h._id} style={{ padding: '10px 12px', background: 'var(--bg-main)', borderRadius: 'var(--radius-sm)', fontSize: '0.88rem', borderLeft: h.source === 'self' ? '3px solid #f59e0b' : '3px solid transparent' }}>
+                      <div>
+                        <strong>{h.description}</strong>
+                        <SourceBadge source={h.source} by={h.createdByName} />
+                      </div>
                       {h.diagnosis && <div>Diagnosis: {h.diagnosis}</div>}
                       <div style={{ color: 'var(--text-secondary)' }}>{h.doctor ? `${h.doctor} · ` : ''}{new Date(h.date).toLocaleDateString()}</div>
                       {h.notes && <div style={{ fontStyle: 'italic', color: 'var(--text-secondary)' }}>{h.notes}</div>}
@@ -446,8 +450,11 @@ export default function DoctorAppointments() {
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                   {record.prescriptions.map(p => (
-                    <div key={p._id} style={{ padding: '10px 12px', background: 'var(--bg-main)', borderRadius: 'var(--radius-sm)', fontSize: '0.88rem' }}>
-                      <strong>{p.medication}</strong> — {p.dosage}
+                    <div key={p._id} style={{ padding: '10px 12px', background: 'var(--bg-main)', borderRadius: 'var(--radius-sm)', fontSize: '0.88rem', borderLeft: p.source === 'self' ? '3px solid #f59e0b' : '3px solid transparent' }}>
+                      <div>
+                        <strong>{p.medication}</strong> — {p.dosage}
+                        <SourceBadge source={p.source} by={p.createdByName || p.doctorName} />
+                      </div>
                       <div style={{ color: 'var(--text-secondary)' }}>{p.frequency || '—'} · {p.duration || '—'}</div>
                       <div style={{ color: 'var(--text-muted)', fontSize: '0.82rem' }}>{p.prescribedBy || '—'} · {new Date(p.date).toLocaleDateString()}</div>
                     </div>
@@ -463,9 +470,10 @@ export default function DoctorAppointments() {
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                   {record.documents.map(d => (
-                    <div key={d._id} style={{ padding: '10px 12px', background: 'var(--bg-main)', borderRadius: 'var(--radius-sm)', fontSize: '0.88rem', display: 'flex', justifyContent: 'space-between' }}>
+                    <div key={d._id} style={{ padding: '10px 12px', background: 'var(--bg-main)', borderRadius: 'var(--radius-sm)', fontSize: '0.88rem', display: 'flex', justifyContent: 'space-between', borderLeft: d.source === 'self' ? '3px solid #f59e0b' : '3px solid transparent' }}>
                       <div>
                         <strong>{d.fileName}</strong>
+                        <SourceBadge source={d.source} by={d.createdByName} />
                         <div style={{ color: 'var(--text-secondary)' }}>{d.type} · {new Date(d.uploadDate).toLocaleDateString()}</div>
                       </div>
                       {d.fileUrl && (
