@@ -1,13 +1,13 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense } from 'react';
 import { MedCard as Card, MedInput as Input, MedButton as Button, showToast } from '../components/UI';
 import { useAuth } from '../context/AuthContext';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { Lock, Hourglass } from 'lucide-react';
 
-export default function LoginPage() {
+function LoginPageInner() {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [loading, setLoading] = useState(false);
@@ -136,5 +136,13 @@ export default function LoginPage() {
                 </Card>
             </div>
         </div>
+    );
+}
+
+export default function LoginPage() {
+    return (
+        <Suspense fallback={<div style={{ minHeight: '90vh' }} />}>
+            <LoginPageInner />
+        </Suspense>
     );
 }

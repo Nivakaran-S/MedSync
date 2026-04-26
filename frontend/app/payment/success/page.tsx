@@ -1,12 +1,12 @@
 'use client';
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState, Suspense } from 'react';
 import { MedCard as Card, MedButton as Button } from '../../components/UI';
 import Link from 'next/link';
 import { paymentApi } from '../../services/api';
 import { useSearchParams } from 'next/navigation';
 
-export default function PaymentSuccessPage() {
+function PaymentSuccessInner() {
     const searchParams = useSearchParams();
     const sessionId = useMemo(() => searchParams.get('session_id') || '', [searchParams]);
     const [confirming, setConfirming] = useState(Boolean(sessionId));
@@ -70,5 +70,13 @@ export default function PaymentSuccessPage() {
                 )}
             </Card>
         </div>
+    );
+}
+
+export default function PaymentSuccessPage() {
+    return (
+        <Suspense fallback={<div style={{ minHeight: '70vh' }} />}>
+            <PaymentSuccessInner />
+        </Suspense>
     );
 }
