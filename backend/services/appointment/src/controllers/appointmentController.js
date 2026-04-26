@@ -47,6 +47,7 @@ exports.createAppointment = async (req, res, next) => {
             patientId, patientName, patientEmail, patientPhone,
             doctorId, doctorName, specialty,
             slotDate, slotTime, reason, consultationFee,
+            doctorConsultationFee, systemFee, totalConsultationFee,
         } = req.body;
 
         if (req.user && req.user.role !== 'admin' && req.user.id !== patientId) {
@@ -95,7 +96,13 @@ exports.createAppointment = async (req, res, next) => {
         const appointment = new Appointment({
             patientId, patientName, patientEmail, patientPhone,
             doctorId, doctorName, specialty,
-            slotDate, slotTime, reason, consultationFee,
+            slotDate,
+            slotTime,
+            reason,
+            consultationFee: Number(totalConsultationFee || consultationFee || 0),
+            doctorConsultationFee: Number(doctorConsultationFee || 0),
+            systemFee: Number(systemFee || 0),
+            totalConsultationFee: Number(totalConsultationFee || consultationFee || 0),
         });
         await appointment.save();
 
@@ -113,7 +120,7 @@ exports.createAppointment = async (req, res, next) => {
                 specialty,
                 date: slotDate,
                 time: slotTime,
-                fee: consultationFee
+                fee: Number(totalConsultationFee || consultationFee || 0),
             }
         });
 

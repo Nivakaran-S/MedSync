@@ -162,9 +162,9 @@ const handleAppointmentCompleted = async (data) => {
 };
 
 const handlePaymentSuccessful = async (data) => {
-  const { patientId, patientEmail, patientPhone, amount, appointmentId } = data;
+  const { patientId, patientEmail, patientPhone, amount, currency, appointmentId } = data;
   const subject = `Payment Successful — MedSync`;
-  const text = `We have successfully received your payment of $${amount} for appointment ${appointmentId}. Your booking is now confirmed.`;
+  const text = `We have successfully received your payment of ${String(currency || 'LKR').toUpperCase()} ${Number(amount || 0).toLocaleString()} for appointment ${appointmentId}. Your booking is now confirmed.`;
   await notify({
     email: patientEmail,
     phone: patientPhone,
