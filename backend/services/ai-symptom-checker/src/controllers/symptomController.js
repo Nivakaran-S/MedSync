@@ -58,6 +58,18 @@ const highest = (arr) => arr.reduce((acc, m) => (urgencyOrder[m.urgency] > urgen
 
 const stripJSON = (raw) => raw.replace(/```json/gi, '').replace(/```/g, '').trim();
 
+// Author tag: every record in the Patient model now carries `source`
+// ('self' | 'doctor' | 'admin'). Self-entered data is anamnestic only;
+// doctor/admin entries are authoritative. Surface this to the LLM so it
+// weighs them differently.
+const sourceTag = (item) => {
+  const s = (item?.source || '').toLowerCase();
+  if (s === 'doctor') return '[doctor-confirmed]';
+  if (s === 'admin') return '[admin-entered]';
+  if (s === 'self') return '[self-reported]';
+  return '[unverified]';
+};
+
 const buildContextBlock = (patientCtx, prescriptions, deepHistory) => {
   const lines = ['', 'PATIENT CLINICAL CONTEXT:'];
   if (patientCtx) {
@@ -74,7 +86,11 @@ const buildContextBlock = (patientCtx, prescriptions, deepHistory) => {
       lines.push(`- Active chronic conditions: ${patientCtx.activeChronicConditions.map((c) => c.name).join(', ')}`);
     }
     if (prescriptions?.length) {
-      lines.push(`- Active medications: ${prescriptions.map((p) => `${p.medication} ${p.dosage || ''}`.trim()).join(', ')}`);
+      lines.push(
+        `- Active medications: ${prescriptions
+          .map((p) => `${p.medication} ${p.dosage || ''}`.trim() + ' ' + sourceTag(p))
+          .join('; ')}`
+      );
     }
     if (patientCtx.lastVitals?.length) {
       const v = patientCtx.lastVitals[0];
@@ -86,16 +102,25 @@ const buildContextBlock = (patientCtx, prescriptions, deepHistory) => {
       if (vbits.length) lines.push(`- Latest vitals: ${vbits.join(', ')}`);
     }
   }
-  // #7 Deep history fold-in
+  // #7 Deep history fold-in — preserve source tag per record
   if (deepHistory) {
     const hist = (deepHistory.medicalHistory || []).slice(-5);
     if (hist.length) {
-      lines.push(`- Recent medical history: ${hist.map((h) => `${h.diagnosis || h.description} (${h.date ? new Date(h.date).getFullYear() : '?'})`).join('; ')}`);
+      lines.push(
+        `- Recent medical history: ${hist
+          .map((h) => `${h.diagnosis || h.description} (${h.date ? new Date(h.date).getFullYear() : '?'}) ${sourceTag(h)}`)
+          .join('; ')}`
+      );
     }
     const fam = (deepHistory.familyHistory || []).slice(0, 5);
     if (fam.length) {
       lines.push(`- Family history: ${fam.map((f) => `${f.relation} → ${f.condition}`).join('; ')}`);
     }
+  }
+  if (lines.length > 1) {
+    lines.push(
+      'Source legend: [doctor-confirmed]/[admin-entered] = authoritative clinical record; [self-reported] = patient-entered anamnesis (treat as unverified history, weigh accordingly).'
+    );
   }
   return lines.length > 1 ? lines.join('\n') : '';
 };
