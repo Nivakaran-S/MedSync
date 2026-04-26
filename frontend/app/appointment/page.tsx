@@ -13,6 +13,7 @@ interface Appointment {
     specialty: string;
     slotDate: string;
     slotTime: string;
+    patientEmail?: string;
     patientPhone?: string;
     consultationFee?: number;
     status: string;
