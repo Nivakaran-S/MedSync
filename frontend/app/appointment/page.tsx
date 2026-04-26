@@ -13,6 +13,7 @@ interface Appointment {
     specialty: string;
     slotDate: string;
     slotTime: string;
+    patientPhone?: string;
     consultationFee?: number;
     status: string;
     paymentStatus?: string;
@@ -65,6 +66,7 @@ export default function AppointmentListPage() {
                 patientId,
                 doctorId: appt.doctorId,
                 doctorName: appt.doctorName,
+                patientPhone: appt.patientPhone,
                 amount: fee,
             });
             window.location.href = url;

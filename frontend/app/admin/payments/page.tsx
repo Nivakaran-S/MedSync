@@ -3,8 +3,8 @@
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { paymentApi } from '../../services/api';
-import { ShieldBan, CreditCard, DollarSign, TrendingUp, RefreshCcw, Search, ExternalLink, Filter, ArrowRight, Undo2 } from 'lucide-react';
-import { Badge, Skeleton, showToast } from '../../components/UI';
+import { ShieldBan, CreditCard, DollarSign, TrendingUp, RefreshCcw, Search, ExternalLink, Filter, Mail, Download, Undo2 } from 'lucide-react';
+import { Badge, Skeleton, showToast, Modal } from '../../components/UI';
 
 export default function AdminPaymentsPage() {
     const { user, isLoading: authLoading } = useAuth();
@@ -12,6 +12,9 @@ export default function AdminPaymentsPage() {
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
     const [statusFilter, setStatusFilter] = useState('all');
+    const [selectedPayment, setSelectedPayment] = useState<any | null>(null);
+    const [emailing, setEmailing] = useState(false);
+    const [downloading, setDownloading] = useState(false);
 
     useEffect(() => {
         if (user?.role === 'admin') {
@@ -57,6 +60,32 @@ export default function AdminPaymentsPage() {
 
     const totalRevenue = payments.reduce((acc, p) => p.status === 'paid' ? acc + p.amount : acc, 0);
     const successRate = payments.length > 0 ? (payments.filter(p => p.status === 'paid').length / payments.length) * 100 : 0;
+
+    const openDetails = (payment: any) => setSelectedPayment(payment);
+
+    const handleDownloadReceipt = async (appointmentId: string) => {
+        try {
+            setDownloading(true);
+            await paymentApi.downloadReceiptPdf(appointmentId);
+            showToast('Receipt PDF downloaded', 'success');
+        } catch (err: any) {
+            showToast(err.message || 'Failed to download receipt', 'error');
+        } finally {
+            setDownloading(false);
+        }
+    };
+
+    const handleEmailReceipt = async (appointmentId: string) => {
+        try {
+            setEmailing(true);
+            await paymentApi.resendReceiptEmail(appointmentId);
+            showToast('Receipt email sent', 'success');
+        } catch (err: any) {
+            showToast(err.message || 'Failed to send receipt email', 'error');
+        } finally {
+            setEmailing(false);
+        }
+    };
 
     return (
         <div className="animate-in" style={{ display: 'grid', gap: '22px' }}>
@@ -212,7 +241,7 @@ export default function AdminPaymentsPage() {
                                                     <Undo2 size={14} /> Refund
                                                 </button>
                                             )}
-                                            <button className="med-button sm secondary" onClick={() => showToast(`Stripe Session: ${p.stripeSessionId || 'N/A'}`, 'info')}>
+                                            <button className="med-button sm secondary" onClick={() => openDetails(p)}>
                                                 <ExternalLink size={14} /> Details
                                             </button>
                                         </div>
@@ -223,6 +252,78 @@ export default function AdminPaymentsPage() {
                     </table>
                 )}
             </div>
+
+            <Modal isOpen={Boolean(selectedPayment)} onClose={() => setSelectedPayment(null)} title="Payment Details" width="720px">
+                {selectedPayment && (
+                    <div style={{ display: 'grid', gap: '18px' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px' }}>
+                            <div className="med-card" style={{ marginBottom: 0, padding: '14px' }}>
+                                <div style={{ color: 'var(--text-secondary)', fontSize: '0.8rem' }}>Amount</div>
+                                <div style={{ fontWeight: 800, fontSize: '1.2rem' }}>
+                                    {(selectedPayment.currency || 'LKR').toUpperCase()} {Number(selectedPayment.amount || 0).toLocaleString()}
+                                </div>
+                            </div>
+                            <div className="med-card" style={{ marginBottom: 0, padding: '14px' }}>
+                                <div style={{ color: 'var(--text-secondary)', fontSize: '0.8rem' }}>Status</div>
+                                <Badge text={String(selectedPayment.status || 'unknown').toUpperCase()} variant={selectedPayment.status === 'paid' ? 'low' : selectedPayment.status === 'pending' ? 'medium' : 'high'} />
+                            </div>
+                            <div className="med-card" style={{ marginBottom: 0, padding: '14px' }}>
+                                <div style={{ color: 'var(--text-secondary)', fontSize: '0.8rem' }}>Receipt</div>
+                                <div style={{ fontWeight: 700 }}>{selectedPayment.receiptNumber || 'Not generated'}</div>
+                            </div>
+                        </div>
+
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                            <div style={{ background: 'var(--bg-light)', borderRadius: '14px', padding: '14px' }}>
+                                <div style={{ fontSize: '0.78rem', textTransform: 'uppercase', color: 'var(--text-muted)' }}>Reference</div>
+                                <div style={{ marginTop: '8px', lineHeight: 1.7 }}>
+                                    <div><strong>Appointment:</strong> {selectedPayment.appointmentId}</div>
+                                    <div><strong>Doctor:</strong> {selectedPayment.doctorName || '—'}</div>
+                                    <div><strong>Patient:</strong> {selectedPayment.patientId || '—'}</div>
+                                    <div><strong>Stripe Session:</strong> {selectedPayment.stripeSessionId || '—'}</div>
+                                </div>
+                            </div>
+                            <div style={{ background: 'var(--bg-light)', borderRadius: '14px', padding: '14px' }}>
+                                <div style={{ fontSize: '0.78rem', textTransform: 'uppercase', color: 'var(--text-muted)' }}>Audit</div>
+                                <div style={{ marginTop: '8px', lineHeight: 1.7 }}>
+                                    <div><strong>Payment Intent:</strong> {selectedPayment.stripePaymentIntentId || '—'}</div>
+                                    <div><strong>Created:</strong> {new Date(selectedPayment.createdAt).toLocaleString()}</div>
+                                    <div><strong>Updated:</strong> {new Date(selectedPayment.updatedAt || selectedPayment.createdAt).toLocaleString()}</div>
+                                    <div><strong>Receipt Email:</strong> {selectedPayment.lastReceiptEmail || '—'}</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        {selectedPayment.auditInsights && (
+                            <div style={{ background: 'linear-gradient(135deg, rgba(37,99,235,0.08), rgba(15,23,42,0.04))', borderRadius: '14px', padding: '14px', border: '1px solid var(--card-border)' }}>
+                                <div style={{ fontWeight: 800, marginBottom: '8px' }}>Audit intelligence</div>
+                                <div style={{ display: 'grid', gap: '6px', color: 'var(--text-secondary)' }}>
+                                    <div><strong>Risk score:</strong> {selectedPayment.auditInsights.riskScore}/100</div>
+                                    <div><strong>Risk level:</strong> {String(selectedPayment.auditInsights.riskLevel || 'low').toUpperCase()}</div>
+                                    <div><strong>Flags:</strong> {(selectedPayment.auditInsights.flags || []).join(', ') || 'None'}</div>
+                                </div>
+                            </div>
+                        )}
+
+                        <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+                            <button
+                                className="med-button secondary"
+                                onClick={() => handleDownloadReceipt(selectedPayment.appointmentId)}
+                                disabled={downloading || selectedPayment.status !== 'paid'}
+                            >
+                                <Download size={14} /> {downloading ? 'Downloading...' : 'Download PDF'}
+                            </button>
+                            <button
+                                className="med-button primary"
+                                onClick={() => handleEmailReceipt(selectedPayment.appointmentId)}
+                                disabled={emailing || selectedPayment.status !== 'paid'}
+                            >
+                                <Mail size={14} /> {emailing ? 'Sending...' : 'Email Receipt'}
+                            </button>
+                        </div>
+                    </div>
+                )}
+            </Modal>
         </div>
     );
 }

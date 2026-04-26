@@ -15,6 +15,9 @@ const appointmentSchema = new mongoose.Schema(
     slotTime: { type: String, required: true },
     reason: { type: String, required: true },
     consultationFee: { type: Number, required: true, min: 0 },
+    doctorConsultationFee: { type: Number, min: 0 },
+    systemFee: { type: Number, min: 0 },
+    totalConsultationFee: { type: Number, min: 0 },
 
     paymentStatus: { type: String, enum: ['unpaid', 'paid', 'refunded'], default: 'unpaid' },
     paymentId: { type: String },

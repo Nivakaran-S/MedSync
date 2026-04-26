@@ -86,7 +86,7 @@ const sendReceiptEmailForPayment = async ({ payment, to }) => {
 // ── POST /api/payments/checkout ───────────────────────────────────────────
 exports.createCheckoutSession = async (req, res, next) => {
     try {
-        const { appointmentId, patientId, doctorId, doctorName, amount, currency = 'lkr' } = req.body;
+        const { appointmentId, patientId, doctorId, doctorName, patientPhone, amount, currency = 'lkr' } = req.body;
 
         if (!appointmentId || !patientId || !amount) {
             return res.status(400).json({ message: 'appointmentId, patientId, and amount are required' });
@@ -124,6 +124,7 @@ exports.createCheckoutSession = async (req, res, next) => {
                 patientId,
                 doctorId: doctorId || '',
                 patientEmail: req.user?.email || '',
+                patientPhone: patientPhone || '',
             },
             success_url: `${FRONTEND_URL}/payment/success?session_id={CHECKOUT_SESSION_ID}`,
             cancel_url: `${FRONTEND_URL}/payment/cancel?appointmentId=${appointmentId}`,
@@ -138,6 +139,7 @@ exports.createCheckoutSession = async (req, res, next) => {
                 doctorName,
                 amount,
                 currency,
+                patientPhone: patientPhone || '',
                 stripeSessionId: session.id,
                 status: 'pending',
             },
@@ -235,6 +237,7 @@ exports.handleWebhook = async (req, res, _next) => {
                     patientId,
                     amount: payment.amount,
                     currency: payment.currency,
+                    patientPhone: session?.metadata?.patientPhone || payment?.metadata?.customer_details?.phone || null,
                     patientEmail: recipientEmail,
                     receiptNumber: payment.receiptNumber,
                     receiptHash: payment.receiptHash,

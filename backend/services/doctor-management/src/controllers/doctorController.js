@@ -1,5 +1,6 @@
 const Doctor = require('../models/Doctor');
 const Prescription = require('../models/Prescription');
+const SystemConfig = require('../models/SystemConfig');
 const axios = require('axios');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
@@ -18,6 +19,8 @@ const JWT_SECRET = process.env.JWT_SECRET;
 const JWT_EXPIRE = process.env.JWT_EXPIRE || '7d';
 
 const dayIndexToName = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const CONSULTATION_SETTINGS_KEY = 'consultation-settings';
+const DEFAULT_SYSTEM_CONSULTATION_FEE = Number(process.env.DEFAULT_SYSTEM_CONSULTATION_FEE || 0);
 
 const isSameSlot = (slot, day, startTime, endTime) =>
   slot.day === day && slot.startTime === startTime && slot.endTime === endTime;
@@ -44,6 +47,17 @@ const hasBookedOrConfirmedForSlot = async ({ doctorId, day, startTime, endTime, 
 
   const all = [...pending, ...confirmed];
   return all.some((appt) => appt.slotTime === slotTime && dateToDayName(appt.slotDate) === day);
+};
+
+const getOrCreateConsultationSettings = async () => {
+  let settings = await SystemConfig.findOne({ key: CONSULTATION_SETTINGS_KEY });
+  if (!settings) {
+    settings = await SystemConfig.create({
+      key: CONSULTATION_SETTINGS_KEY,
+      defaultConsultationFee: DEFAULT_SYSTEM_CONSULTATION_FEE,
+    });
+  }
+  return settings;
 };
 
 exports.registerDoctor = async (req, res) => {
@@ -178,6 +192,48 @@ const DOCTOR_UPDATABLE_FIELDS = [
   'address', 'phone', 'gender', 'dateOfBirth', 'contact',
 ];
 const ADMIN_ONLY_FIELDS = ['isVerified', 'isActive', 'isLicenseApproved', 'licenseImageUrl'];
+
+exports.getConsultationSettings = async (_req, res) => {
+  try {
+    const settings = await getOrCreateConsultationSettings();
+    res.json({
+      defaultConsultationFee: Number(settings.defaultConsultationFee || 0),
+      updatedAt: settings.updatedAt,
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+exports.updateConsultationSettings = async (req, res) => {
+  try {
+    if (req.user && req.user.role !== 'admin') {
+      return res.status(403).json({ message: 'Forbidden: Admin access required.' });
+    }
+
+    const defaultConsultationFee = Number(req.body?.defaultConsultationFee);
+    if (!Number.isFinite(defaultConsultationFee) || defaultConsultationFee < 0) {
+      return res.status(400).json({ message: 'defaultConsultationFee must be a non-negative number.' });
+    }
+
+    const settings = await SystemConfig.findOneAndUpdate(
+      { key: CONSULTATION_SETTINGS_KEY },
+      {
+        key: CONSULTATION_SETTINGS_KEY,
+        defaultConsultationFee,
+        updatedBy: req.user?.id || null,
+      },
+      { upsert: true, new: true }
+    );
+
+    res.json({
+      defaultConsultationFee: Number(settings.defaultConsultationFee || 0),
+      updatedAt: settings.updatedAt,
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
 
 exports.updateDoctor = async (req, res) => {
   try {

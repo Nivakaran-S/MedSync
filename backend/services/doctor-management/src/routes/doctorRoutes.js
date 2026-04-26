@@ -32,6 +32,10 @@ const auth = (req, res, next) => {
 router.post('/register', doctorController.registerDoctor);
 router.post('/login', doctorController.login);
 
+// Consultation fee settings
+router.get('/settings/consultation-fee', doctorController.getConsultationSettings);
+router.put('/settings/consultation-fee', auth, doctorController.updateConsultationSettings);
+
 // Prescriptions — verify is public (QR scan), issue is doctor-only
 router.get('/prescriptions/verify/:verificationId', doctorController.getPrescriptionByVerifyId);
 router.post('/prescriptions', auth, doctorController.issuePrescription);
